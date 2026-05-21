@@ -30,10 +30,11 @@ A dark, AI-driven Visual Novel built on D&D 5e core rules. The game uses generat
 - PostgreSQL schema for characters and story nodes
 - FastAPI base structure and AI bridge
 
-### Week 2 - DN-201
+### Week 2 - DN-201, DN-202
 - D20 skill checks and combat logic
 - Inventory management and state validation
 - Save/load endpoints for story progress
+- Docker containerization and environment configuration (dev/prod)
 
 ### Week 3 - DN-301, DN-302
 - React frontend with dark visual novel UI
@@ -56,6 +57,6 @@ Eine KI-gestutzte Visual Novel auf Basis der D&D-5e-Regelwerks. Das Spiel nutzt 
 
 **Woche 1** - Repository-Setup, CI/CD-Pipeline, Datenbankschema, FastAPI-Grundstruktur
 
-**Woche 2** - Regelwerk-Engine: W20-Wurfe, Kampfsystem, Inventarverwaltung, Story-Flags
+**Woche 2** - Regelwerk-Engine: W20-Wurfe, Kampfsystem, Inventarverwaltung, Story-Flags, Docker-Setup und Umgebungskonfiguration
 
 **Woche 3** - React-Frontend mit Dark-Theme, Charakterbogen-Panel, Wurfelanimation, AWS-Deployment und Abschlussprasentation
