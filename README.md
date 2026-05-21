@@ -10,8 +10,6 @@ A dark, AI-driven Visual Novel built on D&D 5e core rules. The game uses generat
 - **Deterministic Rule Engine** - D20 rolls, HP, damage, and inventory are hardcoded in Python; AI cannot override game state
 - **AWS Hosted** - PostgreSQL on RDS, application on EC2 / App Runner
 
----
-
 ## Tech Stack
 
 | Layer | Technology |
@@ -19,9 +17,7 @@ A dark, AI-driven Visual Novel built on D&D 5e core rules. The game uses generat
 | Backend | Python, FastAPI |
 | Database | PostgreSQL (AWS RDS) |
 | Frontend | React, TailwindCSS |
-| DevOps | GitHub Actions, Docker, AWS |
-
----
+| DevOps | GitHub Actions, Docker, Terraform, AWS |
 
 ## Project Roadmap
 
@@ -34,7 +30,7 @@ A dark, AI-driven Visual Novel built on D&D 5e core rules. The game uses generat
 - D20 skill checks and combat logic
 - Inventory management and state validation
 - Save/load endpoints for story progress
-- Docker containerization and environment configuration (dev/prod)
+- Docker containerization and Terraform infrastructure setup
 
 ### Week 3 - DN-301, DN-302
 - React frontend with dark visual novel UI
@@ -47,16 +43,28 @@ A dark, AI-driven Visual Novel built on D&D 5e core rules. The game uses generat
 
 Eine KI-gestutzte Visual Novel auf Basis der D&D-5e-Regelwerks. Das Spiel nutzt generative KI fur atmospharische Texte, wahrend die gesamte Spiellogik (Wurfe, HP, Schaden, Inventar) deterministisch im Python-Backend verarbeitet wird. Die KI erhalt ausschliesslich validierte Zustandsdaten und kann die Spielregeln nicht umgehen.
 
-### Technologien
-- **Backend:** Python, FastAPI
-- **Datenbank:** PostgreSQL (AWS RDS)
-- **Frontend:** React, TailwindCSS
-- **DevOps:** GitHub Actions, Docker, AWS
+## Technologiestack
 
-### Projektzeitraum - 3-Wochen-Sprint
+| Bereich | Technologie |
+|---------|-------------|
+| Backend | Python, FastAPI |
+| Datenbank | PostgreSQL (AWS RDS) |
+| Frontend | React, TailwindCSS |
+| DevOps | GitHub Actions, Docker, Terraform, AWS |
 
-**Woche 1** - Repository-Setup, CI/CD-Pipeline, Datenbankschema, FastAPI-Grundstruktur
+## Projektzeitplan
 
-**Woche 2** - Regelwerk-Engine: W20-Wurfe, Kampfsystem, Inventarverwaltung, Story-Flags, Docker-Setup und Umgebungskonfiguration
+### Woche 1 - DN-101, DN-102
+- Repository-Setup, CI/CD-Pipeline, AWS-Anbindung
+- PostgreSQL-Schema fur Charaktere und Story-Knoten
+- FastAPI-Grundstruktur und KI-Schnittstelle
 
-**Woche 3** - React-Frontend mit Dark-Theme, Charakterbogen-Panel, Wurfelanimation, AWS-Deployment und Abschlussprasentation
+### Woche 2 - DN-201, DN-202
+- W20-Wurfe, Kampfsystem und Inventarverwaltung
+- Story-Flags und Zustandsvalidierung
+- Docker-Setup und Terraform-Infrastrukturkonfiguration
+
+### Woche 3 - DN-301, DN-302
+- React-Frontend mit Dark-Theme Visual Novel UI
+- Charakterbogen-Panel, Wurfelanimation, HP-Anzeige
+- AWS-Deployment und Abschlussprasentation
