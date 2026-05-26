@@ -1,0 +1,47 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop, "devops/**", "feat/**"]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    if: hashFiles('Projekt_M4T6/frontend/package.json') != ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: Projekt_M4T6/frontend/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+        working-directory: Projekt_M4T6/frontend
+
+      - run: pnpm lint
+        working-directory: Projekt_M4T6/frontend
+
+      - run: pnpm typecheck
+        working-directory: Projekt_M4T6/frontend
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install ruff
+
+      - run: ruff check backend/
+        if: hashFiles('backend/**/*.py') != ''
