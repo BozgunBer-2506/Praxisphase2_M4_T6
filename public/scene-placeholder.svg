@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 960" role="img" aria-labelledby="title desc">
+  <title id="title">Fantasy dungeon scene placeholder</title>
+  <desc id="desc">A dark stone corridor with warm torch light and a sealed glowing door.</desc>
+  <defs>
+    <linearGradient id="wall" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#273244"/>
+      <stop offset="1" stop-color="#080a12"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="58%" r="42%">
+      <stop offset="0" stop-color="#fb923c" stop-opacity="0.85"/>
+      <stop offset="0.42" stop-color="#f97316" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#020617" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="720" height="960" fill="#070814"/>
+  <path d="M82 0h556l-84 960H166z" fill="url(#wall)"/>
+  <path d="M0 0h150L88 960H0zM570 0h150v960h-88z" fill="#111827"/>
+  <path d="M240 312h240v648H240z" fill="#101523"/>
+  <path d="M276 360h168v600H276z" fill="#171d2d"/>
+  <path d="M0 0h720v960H0z" fill="url(#glow)"/>
+  <circle cx="360" cy="548" r="48" fill="#f97316" opacity="0.55"/>
+  <path d="M360 184l26 74h78l-63 46 24 74-65-46-65 46 24-74-63-46h78z" fill="#f8fafc" opacity="0.16"/>
+  <g fill="#03040a" opacity="0.4">
+    <rect x="104" y="160" width="82" height="28"/>
+    <rect x="522" y="240" width="90" height="28"/>
+    <rect x="116" y="384" width="96" height="28"/>
+    <rect x="510" y="472" width="82" height="28"/>
+  </g>
+</svg>
