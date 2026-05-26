@@ -8,7 +8,6 @@ on:
 
 jobs:
   frontend:
-    name: Frontend Lint & Typecheck
     runs-on: ubuntu-latest
     if: hashFiles('Projekt_M4T6/frontend/package.json') != ''
     steps:
@@ -24,20 +23,16 @@ jobs:
           cache: pnpm
           cache-dependency-path: Projekt_M4T6/frontend/pnpm-lock.yaml
 
-      - name: Install dependencies
+      - run: pnpm install --frozen-lockfile
         working-directory: Projekt_M4T6/frontend
-        run: pnpm install --frozen-lockfile
 
-      - name: Lint
+      - run: pnpm lint
         working-directory: Projekt_M4T6/frontend
-        run: pnpm lint
 
-      - name: Typecheck
+      - run: pnpm typecheck
         working-directory: Projekt_M4T6/frontend
-        run: pnpm typecheck
 
   backend:
-    name: Python Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,9 +41,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install ruff
-        run: pip install ruff
+      - run: pip install ruff
 
-      - name: Lint
-        run: ruff check backend/
+      - run: ruff check backend/
         if: hashFiles('backend/**/*.py') != ''
