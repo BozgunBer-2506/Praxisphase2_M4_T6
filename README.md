@@ -8,7 +8,7 @@ A dark, AI-driven Visual Novel built on D&D 5e core rules. The game uses generat
 
 - **CI/CD via GitHub Actions** - automated linting and deployment on every push to main
 - **Deterministic Rule Engine** - D20 rolls, HP, damage, and inventory are hardcoded in Python; AI cannot override game state
-- **AWS Hosted** - PostgreSQL on RDS, application on EC2 / App Runner
+- **AWS Hosted** - PostgreSQL on RDS, application on Elastic Beanstalk, infrastructure managed with Terraform
 
 ## Tech Stack
 
@@ -18,6 +18,18 @@ A dark, AI-driven Visual Novel built on D&D 5e core rules. The game uses generat
 | Database | PostgreSQL (AWS RDS) |
 | Frontend | React, TailwindCSS |
 | DevOps | GitHub Actions, Docker, Terraform, AWS |
+
+## Running Locally
+
+Make sure Docker is installed, then:
+
+```bash
+docker compose up
+```
+
+- Backend: http://localhost:8000
+- Health check: http://localhost:8000/health
+- Database: localhost:5432
 
 ## Project Roadmap
 
