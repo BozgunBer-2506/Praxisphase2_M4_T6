@@ -1,4 +1,4 @@
-# AI-Powered DnD 5e Guided Narrative Experience
+# AI-Powered DnD 5e Guided Narrative Experience – Falkenwacht
 
 A dark, AI-driven Visual Novel built on D&D 5e core rules. The game uses generative AI for storytelling, but all game logic (dice rolls, HP, damage, inventory) is handled strictly in the backend - the AI only receives validated state and generates descriptions.
 
@@ -16,7 +16,7 @@ A dark, AI-driven Visual Novel built on D&D 5e core rules. The game uses generat
 |-------|-----------|
 | Backend | Python, FastAPI |
 | Database | PostgreSQL (AWS RDS) |
-| Frontend | React, TailwindCSS |
+| Frontend | Next.js, React, TailwindCSS, Zustand, Framer Motion |
 | DevOps | GitHub Actions, Docker, Terraform, AWS |
 
 ## Running Locally
@@ -53,7 +53,7 @@ docker compose up
 
 ## Projektbeschreibung (DE)
 
-Eine KI-gestutzte Visual Novel auf Basis der D&D-5e-Regelwerks. Das Spiel nutzt generative KI fur atmospharische Texte, wahrend die gesamte Spiellogik (Wurfe, HP, Schaden, Inventar) deterministisch im Python-Backend verarbeitet wird. Die KI erhalt ausschliesslich validierte Zustandsdaten und kann die Spielregeln nicht umgehen.
+Eine KI-gestützte Visual Novel auf Basis des D&D-5e-Regelwerks. Das Spiel trägt den Namen **Falkenwacht** und nutzt generative KI für atmosphärische Texte, während die gesamte Spiellogik (Würfe, HP, Schaden, Inventar) deterministisch im Python-Backend verarbeitet wird. Die KI erhält ausschließlich validierte Zustandsdaten und kann die Spielregeln nicht umgehen.
 
 ## Technologiestack
 
@@ -61,22 +61,22 @@ Eine KI-gestutzte Visual Novel auf Basis der D&D-5e-Regelwerks. Das Spiel nutzt 
 |---------|-------------|
 | Backend | Python, FastAPI |
 | Datenbank | PostgreSQL (AWS RDS) |
-| Frontend | React, TailwindCSS |
+| Frontend | Next.js, React, TailwindCSS, Zustand, Framer Motion |
 | DevOps | GitHub Actions, Docker, Terraform, AWS |
 
 ## Projektzeitplan
 
 ### Woche 1 - DN-101, DN-102
 - Repository-Setup, CI/CD-Pipeline, AWS-Anbindung
-- PostgreSQL-Schema fur Charaktere und Story-Knoten
+- PostgreSQL-Schema für Charaktere und Story-Knoten
 - FastAPI-Grundstruktur und KI-Schnittstelle
 
 ### Woche 2 - DN-201, DN-202
-- W20-Wurfe, Kampfsystem und Inventarverwaltung
+- W20-Würfe, Kampfsystem und Inventarverwaltung
 - Story-Flags und Zustandsvalidierung
 - Docker-Setup und Terraform-Infrastrukturkonfiguration
 
 ### Woche 3 - DN-301, DN-302
 - React-Frontend mit Dark-Theme Visual Novel UI
-- Charakterbogen-Panel, Wurfelanimation, HP-Anzeige
-- AWS-Deployment und Abschlussprasentation
+- Charakterbogen-Panel, Würfelanimation, HP-Anzeige
+- AWS-Deployment und Abschlusspräsentation
