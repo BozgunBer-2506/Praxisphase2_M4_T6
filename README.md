@@ -38,11 +38,12 @@ docker compose up
 - PostgreSQL schema for characters and story nodes
 - FastAPI base structure and AI bridge
 
-### Week 2 - DN-201, DN-202
+### Week 2 - DN-201, DN-202, DN-203
 - D20 skill checks and combat logic
 - Inventory management and state validation
 - Save/load endpoints for story progress
 - Docker containerization and Terraform infrastructure setup
+- Story/Scene endpoints and OpenAI narrative integration
 
 ### Week 3 - DN-301, DN-302
 - React frontend with dark visual novel UI
@@ -71,10 +72,11 @@ Eine KI-gestützte Visual Novel auf Basis des D&D-5e-Regelwerks. Das Spiel träg
 - PostgreSQL-Schema für Charaktere und Story-Knoten
 - FastAPI-Grundstruktur und KI-Schnittstelle
 
-### Woche 2 - DN-201, DN-202
+### Woche 2 - DN-201, DN-202, DN-203
 - W20-Würfe, Kampfsystem und Inventarverwaltung
 - Story-Flags und Zustandsvalidierung
 - Docker-Setup und Terraform-Infrastrukturkonfiguration
+- Story/Scene-Endpunkte und OpenAI-Narrative-Anbindung
 
 ### Woche 3 - DN-301, DN-302
 - React-Frontend mit Dark-Theme Visual Novel UI
