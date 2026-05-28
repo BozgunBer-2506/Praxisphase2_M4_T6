@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, JSON
 from database import Base
 
 
@@ -18,3 +18,13 @@ class Character(Base):
     intelligence = Column(Integer, nullable=False)
     wisdom = Column(Integer, nullable=False)
     charisma = Column(Integer, nullable=False)
+
+
+class Scene(Base):
+    __tablename__ = "scenes"
+
+    id = Column(Integer, primary_key=True)
+    scene_number = Column(Integer, nullable=False, unique=True)
+    title = Column(String, nullable=False)
+    narrative = Column(String, nullable=False)
+    choices = Column(JSON, nullable=False)
