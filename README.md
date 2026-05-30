@@ -19,6 +19,37 @@ A dark, AI-driven Visual Novel built on D&D 5e core rules. The game uses generat
 | Frontend | Next.js, React, TailwindCSS, Zustand, Framer Motion |
 | DevOps | GitHub Actions, Docker, Terraform, AWS |
 
+## AWS Setup (einmalig / one-time)
+
+Vor dem ersten `terraform apply` müssen zwei Ressourcen manuell in AWS erstellt werden:
+
+**1. S3 Bucket für Terraform State**
+- AWS Console → S3 → Create bucket
+- Name: `falkenwacht-terraform-state`
+- Region: `eu-central-1`
+
+**2. EC2 Key Pair**
+- AWS Console → EC2 → Key Pairs → Create key pair
+- Name: `falkenwacht-key`
+- Die heruntergeladene `.pem`-Datei als GitHub Secret `SSH_PRIVATE_KEY` hinterlegen
+
+Danach in `terraform/` ausführen:
+```bash
+terraform init
+terraform apply -var="db_password=DEIN_PASSWORT"
+```
+
+**Benötigte GitHub Secrets**
+
+| Secret | Beschreibung |
+|--------|-------------|
+| `AWS_ACCESS_KEY_ID` | AWS Zugangsdaten |
+| `AWS_SECRET_ACCESS_KEY` | AWS Zugangsdaten |
+| `DB_PASSWORD` | PostgreSQL Datenbankpasswort |
+| `SSH_PRIVATE_KEY` | Inhalt der `.pem` Datei (EC2 Key Pair) |
+
+---
+
 ## Running Locally
 
 Make sure Docker is installed, then:
