@@ -53,8 +53,7 @@ jobs:
           until ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no -o ConnectTimeout=5 ubuntu@$ip true 2>/dev/null; do
             sleep 5
           done
-          ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no ubuntu@$ip "sudo apt-get install -y docker-compose-plugin docker-buildx-plugin 2>/dev/null || true"
           ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no ubuntu@$ip "mkdir -p /home/ubuntu/backend"
-          scp -i ~/.ssh/falkenwacht_key -r backend/ ubuntu@$ip:/home/ubuntu/backend/
-          scp -i ~/.ssh/falkenwacht_key docker-compose.yml ubuntu@$ip:/home/ubuntu/docker-compose.yml
-          ssh -i ~/.ssh/falkenwacht_key ubuntu@$ip "cd /home/ubuntu && sudo docker compose up -d --build db backend"
+          scp -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no -r backend/ ubuntu@$ip:/home/ubuntu/backend/
+          scp -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no docker-compose.yml ubuntu@$ip:/home/ubuntu/docker-compose.yml
+          ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no ubuntu@$ip "cd /home/ubuntu && sudo DOCKER_BUILDKIT=0 docker compose up -d --build db backend"
