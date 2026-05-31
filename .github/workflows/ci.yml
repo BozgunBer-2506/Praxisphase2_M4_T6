@@ -28,6 +28,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
 
       - name: Setup AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -53,7 +55,6 @@ jobs:
           until ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no -o ConnectTimeout=5 ubuntu@$ip true 2>/dev/null; do
             sleep 5
           done
-          ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no ubuntu@$ip "mkdir -p /home/ubuntu/backend"
-          scp -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no -r backend/ ubuntu@$ip:/home/ubuntu/backend/
+          scp -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no -r backend ubuntu@$ip:/home/ubuntu/
           scp -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no docker-compose.yml ubuntu@$ip:/home/ubuntu/docker-compose.yml
           ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no ubuntu@$ip "cd /home/ubuntu && sudo DOCKER_BUILDKIT=0 docker compose up -d --build db backend"
