@@ -8,7 +8,7 @@ A dark, AI-driven Visual Novel built on D&D 5e core rules. The game uses generat
 
 - **CI/CD via GitHub Actions** - automated linting and deployment on every push to main
 - **Deterministic Rule Engine** - D20 rolls, HP, damage, and inventory are hardcoded in Python; AI cannot override game state
-- **AWS Hosted** - PostgreSQL on RDS, application on Elastic Beanstalk, infrastructure managed with Terraform
+- **AWS Hosted** - PostgreSQL on RDS, application on EC2, infrastructure managed with Terraform
 
 ## Tech Stack
 
@@ -25,7 +25,7 @@ Vor dem ersten `terraform apply` müssen zwei Ressourcen manuell in AWS erstellt
 
 **1. S3 Bucket für Terraform State**
 - AWS Console → S3 → Create bucket
-- Name: `falkenwacht-terraform-state`
+- Name: `falkenwacht-t6-terraform-state`
 - Region: `eu-central-1`
 
 **2. EC2 Key Pair**
