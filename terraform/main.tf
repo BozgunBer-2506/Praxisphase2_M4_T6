@@ -64,7 +64,7 @@ resource "aws_instance" "falkenwacht_server" {
   user_data = <<-EOF
     #!/bin/bash
     apt-get update
-    apt-get install -y docker.io docker-compose
+    apt-get install -y docker.io docker-compose-plugin
     systemctl start docker
     systemctl enable docker
     usermod -aG docker ubuntu
