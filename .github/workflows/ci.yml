@@ -53,6 +53,7 @@ jobs:
           until ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no -o ConnectTimeout=5 ubuntu@$ip true 2>/dev/null; do
             sleep 5
           done
+          ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no ubuntu@$ip "mkdir -p /home/ubuntu/backend"
           scp -i ~/.ssh/falkenwacht_key -r backend/ ubuntu@$ip:/home/ubuntu/backend/
           scp -i ~/.ssh/falkenwacht_key docker-compose.yml ubuntu@$ip:/home/ubuntu/docker-compose.yml
           ssh -i ~/.ssh/falkenwacht_key ubuntu@$ip "cd /home/ubuntu && sudo docker-compose up -d --build"
