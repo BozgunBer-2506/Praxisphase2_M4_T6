@@ -19,5 +19,14 @@ services:
     depends_on:
       - db
 
+  frontend:
+    build: ./Projekt_M4T6/frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8000
+    depends_on:
+      - backend
+
 volumes:
   postgres_data:
