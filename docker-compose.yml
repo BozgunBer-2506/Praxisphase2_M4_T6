@@ -1,0 +1,32 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: dnd_user
+      POSTGRES_PASSWORD: dnd_pass
+      POSTGRES_DB: dnd_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://dnd_user:dnd_pass@db:5432/dnd_db
+    depends_on:
+      - db
+
+  frontend:
+    build: ./Projekt_M4T6/frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8000
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

@@ -1,0 +1,58 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop, "devops/**", "feat/**"]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install ruff
+
+      - run: ruff check backend/
+
+  terraform:
+    runs-on: ubuntu-latest
+    needs: backend
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Setup AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: terraform
+        run: terraform apply -auto-approve -var="db_password=${{ secrets.DB_PASSWORD }}"
+
+      - name: SSH Deploy
+        run: |
+          ip=$(cd terraform && terraform output -raw ec2_public_ip)
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/falkenwacht_key
+          chmod 400 ~/.ssh/falkenwacht_key
+          until ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no -o ConnectTimeout=5 ubuntu@$ip true 2>/dev/null; do
+            sleep 5
+          done
+          scp -i ~/.ssh/falkenwacht_key -r backend/ ubuntu@$ip:/home/ubuntu/backend/
+          scp -i ~/.ssh/falkenwacht_key docker-compose.yml ubuntu@$ip:/home/ubuntu/docker-compose.yml
+          ssh -i ~/.ssh/falkenwacht_key ubuntu@$ip "cd /home/ubuntu && sudo docker-compose up -d --build"

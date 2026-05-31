@@ -13,9 +13,6 @@ build/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-htmlcov/
-coverage/
-.coverage
 
 # Environment
 .env
@@ -28,21 +25,6 @@ dist/
 .next/
 .vite/
 *.local
-.pnpm-store/
-*.pnpm-debug.log
-
-# Terraform
-.terraform/
-*.tfstate
-*.tfstate.backup
-*.tfvars
-!*.tfvars.example
-crash.log
-crash.*.log
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json
 
 # Docker
 docker-compose.override.yml
@@ -51,14 +33,6 @@ docker-compose.override.yml
 .aws/
 *.pem
 *.key
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
-
-# Logs
-*.log
 
 # IDE
 .vscode/
@@ -69,4 +43,13 @@ docker-compose.override.yml
 # OS
 .DS_Store
 Thumbs.db
-*Zone.Identifier
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+terraform.tfvars
+.terraform.lock.hcl
+
+# Documents
+*.pdf
