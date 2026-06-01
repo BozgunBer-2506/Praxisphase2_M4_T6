@@ -20,11 +20,9 @@ services:
       - db
 
   frontend:
-    build: ./Projekt_M4T6/frontend
+    image: 577817260098.dkr.ecr.eu-central-1.amazonaws.com/falkenwacht-frontend:latest
     ports:
       - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: http://18.157.116.245:8000
     depends_on:
       - backend
 
