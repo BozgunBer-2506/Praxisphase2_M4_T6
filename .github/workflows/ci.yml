@@ -55,6 +55,8 @@ jobs:
           until ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no -o ConnectTimeout=5 ubuntu@$ip true 2>/dev/null; do
             sleep 5
           done
+          rds=$(cd terraform && terraform output -raw rds_endpoint)
+          ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no ubuntu@$ip "echo 'DATABASE_URL=postgresql://dnd_user:${{ secrets.DB_PASSWORD }}@$rds:5432/dnd_db' > /home/ubuntu/.env"
           scp -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no -r backend ubuntu@$ip:/home/ubuntu/
           ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no ubuntu@$ip "mkdir -p /home/ubuntu/Projekt_M4T6"
           scp -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no -r Projekt_M4T6/frontend ubuntu@$ip:/home/ubuntu/Projekt_M4T6/
