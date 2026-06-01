@@ -28,6 +28,17 @@ import {
   initialSceneId,
   scenes,
 } from "@/data/scenes";
+import {
+  type HudEvent,
+  type InventoryAction,
+  type InventoryStateItem,
+  type InventoryViewItem,
+  type SaveGameState,
+  createOrUpdateSave,
+  getInventoryView,
+  narrateWithAiDm,
+  runSaveInventoryAction,
+} from "@/lib/backendApi";
 
 const SAVE_KEY = "falkenwacht.saveStates";
 const LAST_SAVE_KEY = "falkenwacht.lastSave";
@@ -36,6 +47,37 @@ const MAX_CAMPAIGN_SAVES = 5;
 const CAMPAIGN_TITLE = "Falkenwacht - Die Korruption der Greifenstadt";
 const WORD_REVEAL_MS = 85;
 const diceTypes = [4, 6, 8, 10, 12, 20, 100] as const;
+const BACKEND_SLOT_NAME = "autosave";
+
+const createId = () =>
+  globalThis.crypto?.randomUUID?.() ??
+  `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
+const toBackendCharacterId = (characterId: CharacterId) =>
+  characterId === "ryu" ? "ayane" : "johan";
+
+const characterRuleStats: Record<CharacterId, { dexModifier: number }> = {
+  ryu: { dexModifier: 2 },
+  ayane: { dexModifier: 0 },
+};
+
+const initialInventory: InventoryStateItem[] = [
+  {
+    item_id: "healing_potion",
+    name: "Healing Potion",
+    quantity: 2,
+  },
+  {
+    item_id: "torch",
+    name: "Torch",
+    quantity: 1,
+  },
+  {
+    item_id: "leather_armor",
+    name: "Leather Armor",
+    quantity: 1,
+  },
+];
 
 const characterSheets = {
   ryu: {
@@ -147,6 +189,12 @@ type SaveState = {
   createdAt: string;
 };
 
+type RuntimeStats = {
+  currentHp: number;
+  maxHp: number;
+  ac: number;
+};
+
 type RollMode = "normal" | "advantage" | "disadvantage";
 
 type RollResult = {
@@ -182,6 +230,21 @@ type PendingCheck = {
 
 const findScene = (sceneId: string) =>
   scenes.find((scene) => scene.id === sceneId) ?? scenes[0];
+
+const calculateArmorClass = (
+  characterId: CharacterId,
+  inventory: InventoryStateItem[],
+) => {
+  const leatherArmor = inventory.find(
+    (item) => item.item_id === "leather_armor" && item.equipped,
+  );
+
+  if (leatherArmor) {
+    return 11 + characterRuleStats[characterId].dexModifier;
+  }
+
+  return characters[characterId].stats.ac;
+};
 
 const readSaveStates = (): SaveState[] => {
   if (typeof window === "undefined") {
@@ -221,6 +284,28 @@ export default function Home() {
   const [isSheetExpanded, setIsSheetExpanded] = useState(true);
   const [isSkillsExpanded, setIsSkillsExpanded] = useState(true);
   const [isActionsExpanded, setIsActionsExpanded] = useState(true);
+  const [isInventoryExpanded, setIsInventoryExpanded] = useState(true);
+  const [inventoryState, setInventoryState] =
+    useState<InventoryStateItem[]>(initialInventory);
+  const [inventoryItems, setInventoryItems] = useState<InventoryViewItem[]>([]);
+  const [inventoryStatus, setInventoryStatus] = useState(
+    "Inventory bereit, Backend-Abgleich ausstehend.",
+  );
+  const [runtimeStats, setRuntimeStats] = useState<Record<CharacterId, RuntimeStats>>(
+    () => ({
+      ryu: {
+        currentHp: characters.ryu.stats.hp,
+        maxHp: characters.ryu.stats.hp,
+        ac: characters.ryu.stats.ac,
+      },
+      ayane: {
+        currentHp: characters.ayane.stats.hp,
+        maxHp: characters.ayane.stats.hp,
+        ac: characters.ayane.stats.ac,
+      },
+    }),
+  );
+  const [hudEvents, setHudEvents] = useState<HudEvent[]>([]);
   const [pendingCheck, setPendingCheck] = useState<PendingCheck | null>(null);
   const [gameLog, setGameLog] = useState<GameLogEntry[]>([
     {
@@ -287,7 +372,35 @@ export default function Home() {
   const activeSheet = selectedCharacterId
     ? characterSheets[selectedCharacterId]
     : null;
+  const activeRuntimeStats = selectedCharacterId
+    ? runtimeStats[selectedCharacterId]
+    : null;
   const actorName = activeCharacter?.name ?? "Der Charakter";
+  const backendSaveState = useMemo<SaveGameState>(() => {
+    const mainCharacter = activeCharacter ?? characters.ryu;
+    const companion = activeNpc ?? characters.ayane;
+    const mainRuntime = runtimeStats[mainCharacter.id];
+    const companionRuntime = runtimeStats[companion.id];
+
+    return {
+      main_character: {
+        character_id: toBackendCharacterId(mainCharacter.id),
+        current_hp: mainRuntime.currentHp,
+        max_hp: mainRuntime.maxHp,
+        conditions: [],
+      },
+      npc_companion: {
+        character_id: toBackendCharacterId(companion.id),
+        current_hp: companionRuntime.currentHp,
+        max_hp: companionRuntime.maxHp,
+        conditions: [],
+      },
+      story_flags: {
+        egg_stolen: true,
+      },
+      inventory: inventoryState,
+    };
+  }, [activeCharacter, activeNpc, inventoryState, runtimeStats]);
   const pendingSkillNames = new Set(
     pendingCheck?.checks
       .map((check) => check.skill)
@@ -297,12 +410,212 @@ export default function Home() {
   const addGameLog = (entry: Omit<GameLogEntry, "id" | "createdAt">) => {
     setGameLog((items) => [
       {
-        id: crypto.randomUUID(),
+        id: createId(),
         createdAt: new Date().toISOString(),
         ...entry,
       },
       ...items,
     ].slice(0, 20));
+  };
+
+  const formatHudEvent = (event: HudEvent) => {
+    const payload = event.payload ?? {};
+    const healing = payload.healing;
+
+    if (
+      event.type === "hp_change" &&
+      typeof healing === "object" &&
+      healing !== null &&
+      "total" in healing &&
+      "modifier" in healing &&
+      "rolls" in healing &&
+      typeof healing.total === "number" &&
+      typeof healing.modifier === "number" &&
+      Array.isArray(healing.rolls)
+    ) {
+      return `Healing Potion: 2d4 + ${healing.modifier} = +${healing.total} HP (Würfe ${healing.rolls.join(" / ")})`;
+    }
+
+    if (event.type === "inventory_equip") {
+      return `${event.item_id ?? "Item"} ausgerüstet`;
+    }
+
+    if (event.type === "inventory_unequip") {
+      return `${event.item_id ?? "Item"} abgelegt`;
+    }
+
+    const total = payload.total ?? payload.remaining_hp ?? payload.hit;
+
+    return `${event.label ?? event.type}${total !== undefined ? `: ${String(total)}` : ""}`;
+  };
+
+  const applyHudEvents = (events: HudEvent[]) => {
+    if (events.length === 0) {
+      return;
+    }
+
+    setHudEvents((items) => [...events, ...items].slice(0, 8));
+    addGameLog({
+      title: "Backend-HUD Events",
+      detail: events.map(formatHudEvent).join(" | "),
+    });
+
+    const visibleEvent = events.find((event) => {
+      const payload = event.payload ?? {};
+      const healing = payload.healing;
+
+      return (
+        typeof payload.total === "number" ||
+        (typeof healing === "object" &&
+          healing !== null &&
+          "total" in healing &&
+          typeof healing.total === "number") ||
+        typeof payload.remaining_hp === "number"
+      );
+    });
+
+    if (!visibleEvent) {
+      return;
+    }
+
+    const payload = visibleEvent.payload ?? {};
+    const healing = payload.healing;
+    const healingRolls =
+      typeof healing === "object" &&
+      healing !== null &&
+      "rolls" in healing &&
+      Array.isArray(healing.rolls)
+        ? healing.rolls.filter((roll): roll is number => typeof roll === "number")
+        : null;
+    const healingModifier =
+      typeof healing === "object" &&
+      healing !== null &&
+      "modifier" in healing &&
+      typeof healing.modifier === "number"
+        ? healing.modifier
+        : null;
+    const total =
+      typeof payload.total === "number"
+        ? payload.total
+        : typeof healing === "object" &&
+            healing !== null &&
+            "total" in healing &&
+            typeof healing.total === "number"
+          ? healing.total
+          : typeof payload.remaining_hp === "number"
+        ? payload.remaining_hp
+        : 0;
+
+    setRollResult({
+      diceType: healingRolls ? 4 : 20,
+      rolls: healingRolls ?? [total],
+      selectedRoll: total,
+      modifier: healingModifier ?? 0,
+      total,
+      mode: "normal",
+      label:
+        healingRolls && healingModifier !== null
+          ? "Healing Potion 2d4 + 2"
+          : visibleEvent.label ?? visibleEvent.type,
+    });
+    setRollAnimationKey((currentKey) => currentKey + 1);
+  };
+
+  const syncInventoryView = async (nextInventory = inventoryState) => {
+    try {
+      const response = await getInventoryView(nextInventory);
+      setInventoryItems(response.items);
+      setInventoryStatus("Inventory mit Backend synchronisiert.");
+    } catch (error) {
+      setInventoryItems(nextInventory);
+      setInventoryStatus(
+        "Backend nicht erreichbar. Inventory bleibt lokal sichtbar.",
+      );
+      void error;
+    }
+  };
+
+  const syncBackendSave = async (state = backendSaveState) => {
+    if (!selectedCharacterId) {
+      return;
+    }
+
+    try {
+      await createOrUpdateSave({
+        slot_name: BACKEND_SLOT_NAME,
+        character_id: toBackendCharacterId(selectedCharacterId),
+        scene_number:
+          scenes.findIndex((scene) => scene.id === currentSceneId) + 1 || 1,
+        state,
+      });
+    } catch (error) {
+      void error;
+    }
+  };
+
+  const getInventoryDescription = (item: InventoryViewItem) => {
+    if (item.item_id === "healing_potion") {
+      return "Potion of Healing nach D&D 5e: heilt 2d4 + 2 HP und wird beim Benutzen verbraucht.";
+    }
+
+    if (item.item_id === "leather_armor" && selectedCharacterId) {
+      const armorClass = 11 + characterRuleStats[selectedCharacterId].dexModifier;
+
+      return `Leather Armor nach D&D 5e: AC 11 + DEX-Modifikator. Für ${actorName}: AC ${armorClass}.`;
+    }
+
+    return item.description;
+  };
+
+  const handleInventoryAction = async (
+    item: InventoryViewItem,
+    action: InventoryAction,
+  ) => {
+    setInventoryStatus(`${item.name}: ${action} wird über Backend geprüft...`);
+
+    try {
+      await syncBackendSave();
+      const response = await runSaveInventoryAction(
+        BACKEND_SLOT_NAME,
+        item.item_id,
+        action,
+      );
+
+      setInventoryState(response.state.inventory);
+      setInventoryItems(response.inventory);
+      if (selectedCharacterId) {
+        setRuntimeStats((currentStats) => ({
+          ...currentStats,
+          [selectedCharacterId]: {
+            ...currentStats[selectedCharacterId],
+            currentHp: response.state.main_character.current_hp,
+            maxHp: response.state.main_character.max_hp,
+            ac: calculateArmorClass(selectedCharacterId, response.state.inventory),
+          },
+        }));
+      }
+      applyHudEvents(response.events);
+      const healingEvent = response.events.find(
+        (event) => event.type === "hp_change",
+      );
+      const healing = healingEvent?.payload?.healing;
+      const healingText =
+        typeof healing === "object" && healing !== null && "total" in healing
+          ? ` Heilung: ${String(healing.total)} HP.`
+          : "";
+      const armorText =
+        item.item_id === "leather_armor" && selectedCharacterId
+          ? ` AC jetzt ${calculateArmorClass(selectedCharacterId, response.state.inventory)}.`
+          : "";
+
+      setInventoryStatus(`${item.name}: ${action} ausgeführt.${healingText}${armorText}`);
+    } catch (error) {
+      setInventoryStatus(`Aktion fehlgeschlagen: ${item.name} (${action}).`);
+      addGameLog({
+        title: "Inventory-Aktion fehlgeschlagen",
+        detail: error instanceof Error ? error.message : "Unbekannter Fehler",
+      });
+    }
   };
 
   const getChoiceChecks = (choice: Choice) =>
@@ -332,6 +645,25 @@ export default function Home() {
       : personalized;
   };
 
+  const buildLocalDmAnswer = (question: string) => {
+    const options = currentScene.choices
+      .map((choice) => choice.label)
+      .join(", ");
+
+    return [
+      `Aktuelle Szene: ${currentScene.title}.`,
+      currentScene.narration,
+      options
+        ? `Mögliche nächste Schritte: ${options}.`
+        : "Aktuell gibt es keine offene Spieleroption.",
+      `Deine Frage: ${question}`,
+    ].join(" ");
+  };
+
+  const shouldUseLocalDmAnswer = (narration: string) =>
+    narration.includes("Die Szene reagiert auf deine Entscheidung") ||
+    narration.startsWith(`${currentScene.title}:`);
+
   const persistSaveState = (
     sceneId: string,
     characterId: CharacterId,
@@ -343,7 +675,7 @@ export default function Home() {
 
     const targetScene = findScene(sceneId);
     const saveState: SaveState = {
-      id: crypto.randomUUID(),
+      id: createId(),
       campaignTitle: CAMPAIGN_TITLE,
       sessionTitle: targetScene.chapter,
       sceneId,
@@ -395,7 +727,7 @@ export default function Home() {
       setDmMessages((messages) => [
         ...messages,
         {
-          id: crypto.randomUUID(),
+          id: createId(),
           sender: "DM",
           text: dmHint,
         },
@@ -539,7 +871,7 @@ export default function Home() {
     setDmMessages((messages) => [
       ...messages,
       {
-        id: crypto.randomUUID(),
+        id: createId(),
         sender: "DM",
         text: checkDetail,
       },
@@ -555,7 +887,7 @@ export default function Home() {
     }, 900);
   };
 
-  const sendDmMessage = () => {
+  const sendDmMessage = async () => {
     const trimmedInput = dmInput.trim();
 
     if (!trimmedInput) {
@@ -565,18 +897,59 @@ export default function Home() {
     setDmMessages((messages) => [
       ...messages,
       {
-        id: crypto.randomUUID(),
+        id: createId(),
         sender: "Spieler",
         text: trimmedInput,
       },
-      {
-        id: crypto.randomUUID(),
-        sender: "DM",
-        text: "Notiert. Im nächsten Backend-Schritt wird diese Frage an die AI-DM-Logik weitergegeben. Aktuell ist dies ein Frontend-Platzhalter.",
-      },
     ]);
     setDmInput("");
+
+    try {
+      const response = await narrateWithAiDm({
+        scene_title: currentScene.title,
+        player_choice: trimmedInput,
+        rules_result: {
+          scene: currentScene.id,
+          last_roll: rollResult,
+        },
+        character_state: backendSaveState.main_character,
+        inventory: inventoryState,
+      });
+
+      setDmMessages((messages) => [
+        ...messages,
+        {
+          id: createId(),
+          sender: "DM",
+          text: shouldUseLocalDmAnswer(response.narration)
+            ? buildLocalDmAnswer(trimmedInput)
+            : response.narration,
+        },
+      ]);
+      applyHudEvents(response.hud_events);
+    } catch (error) {
+      setDmMessages((messages) => [
+        ...messages,
+        {
+          id: createId(),
+          sender: "DM",
+          text: "Backend-DM ist lokal noch nicht erreichbar. Starte FastAPI auf Port 8000, dann wird diese Frage an /ai-dm/narrate gesendet.",
+        },
+      ]);
+      addGameLog({
+        title: "AI-DM nicht erreichbar",
+        detail: error instanceof Error ? error.message : "Unbekannter Fehler",
+      });
+    }
   };
+
+  useEffect(() => {
+    void syncInventoryView();
+  }, [inventoryState]);
+
+  useEffect(() => {
+    void syncBackendSave();
+  }, [backendSaveState, currentSceneId, selectedCharacterId]);
 
   useEffect(() => {
     setVisibleWordCount(0);
@@ -846,14 +1219,15 @@ export default function Home() {
                     <HeartPulse className="mb-1 size-4 text-ember-400" />
                     <p className="text-xs text-slate-400">HP</p>
                     <p className="text-sm font-bold">
-                      {activeCharacter.stats.hp} / {activeCharacter.stats.hp}
+                      {activeRuntimeStats?.currentHp} /{" "}
+                      {activeRuntimeStats?.maxHp}
                     </p>
                   </div>
                   <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
                     <ShieldCheck className="mb-1 size-4 text-ember-400" />
                     <p className="text-xs text-slate-400">AC</p>
                     <p className="text-sm font-bold">
-                      {activeCharacter.stats.ac}
+                      {activeRuntimeStats?.ac}
                     </p>
                   </div>
                 </div>
@@ -998,6 +1372,63 @@ export default function Home() {
                       </div>
                     ))}
                   </div>
+                  ) : null}
+                </div>
+
+                <div>
+                  <button
+                    className="mb-2 flex w-full items-center justify-between text-xs uppercase tracking-[0.16em] text-slate-400"
+                    onClick={() =>
+                      setIsInventoryExpanded((isExpanded) => !isExpanded)
+                    }
+                    type="button"
+                  >
+                    Inventory
+                    <ChevronDown
+                      className={`size-3 transition ${
+                        isInventoryExpanded ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                  {isInventoryExpanded ? (
+                    <div className="space-y-2">
+                      <p className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-2 text-xs text-slate-400">
+                        {inventoryStatus}
+                      </p>
+                      {inventoryItems.map((item) => (
+                        <article
+                          className="rounded-md border border-white/10 bg-white/[0.05] p-2"
+                          key={item.item_id}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-bold">{item.name}</p>
+                              <p className="text-xs text-slate-500">
+                                {item.category ?? "item"} · Menge {item.quantity}
+                                {item.equipped ? " · ausgerüstet" : ""}
+                              </p>
+                            </div>
+                          </div>
+                          {item.description ? (
+                            <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                              {getInventoryDescription(item)}
+                            </p>
+                          ) : null}
+                          <div className="mt-2 grid grid-cols-2 gap-1">
+                            {(item.actions ?? []).map((action) => (
+                              <button
+                                className="rounded-md border border-white/10 bg-white/[0.06] px-2 py-1.5 text-xs font-semibold transition hover:border-ember-400/70"
+                                key={action}
+                                onClick={() => handleInventoryAction(item, action)}
+                                type="button"
+                              >
+                                {action}
+                              </button>
+                            ))}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
                   ) : null}
                 </div>
               </div>
@@ -1465,6 +1896,24 @@ export default function Home() {
           <p className="text-xs text-slate-400">
             {rollResult.rolls.join(" / ")} + Mod {rollResult.modifier}
           </p>
+        ) : null}
+
+        {hudEvents.length > 0 ? (
+          <div className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-2">
+            <p className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-ember-300">
+              Backend-HUD
+            </p>
+            <div className="mt-1 space-y-1">
+              {hudEvents.slice(0, 3).map((event, index) => (
+                <p
+                  className="text-xs leading-snug text-slate-300"
+                  key={`${event.type}-${event.label ?? "event"}-${index}`}
+                >
+                  {formatHudEvent(event)}
+                </p>
+              ))}
+            </div>
+          </div>
         ) : null}
           </div>
         ) : null}

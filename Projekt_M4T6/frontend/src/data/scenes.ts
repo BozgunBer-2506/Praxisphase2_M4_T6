@@ -1,4 +1,4 @@
-export type CharacterId = "ryu" | "ayane";
+﻿export type CharacterId = "ryu" | "ayane";
 
 export type SkillCheck = {
   ability: "STR" | "DEX" | "CON" | "INT" | "WIS" | "CHA";
@@ -278,11 +278,11 @@ export const scenes: Scene[] = [
     ],
     choices: [
       {
-        id: "return-campaigns-after-accept",
-        label: "Speicherstand im Kampagnenportal prüfen",
+        id: "follow-inner-trade-route",
+        label: "Der Route durch Falkenwacht folgen",
         description:
-          "Öffne den Main-Bereich und prüfe, ob diese Entscheidung als Speicherstand vorhanden ist.",
-        nextSceneId: "auftrag-angenommen",
+          "Du folgst der groben Skizze zur inneren Handelsroute, wo die letzte sichere Spur des Eis endet.",
+        nextSceneId: "innere-handelsroute",
       },
     ],
   },
@@ -307,11 +307,11 @@ export const scenes: Scene[] = [
     ],
     choices: [
       {
-        id: "return-campaigns-after-details",
-        label: "Speicherstand im Kampagnenportal prüfen",
+        id: "follow-witness-route",
+        label: "Die Zeugenroute verfolgen",
         description:
-          "Öffne den Main-Bereich und prüfe, ob diese Entscheidung als Speicherstand vorhanden ist.",
-        nextSceneId: "auftrag-details",
+          "Du nutzt Varians Details und suchst die innere Handelsroute nach ersten Widersprüchen ab.",
+        nextSceneId: "innere-handelsroute",
       },
     ],
   },
@@ -423,11 +423,11 @@ export const scenes: Scene[] = [
     ],
     choices: [
       {
-        id: "return-campaigns-after-suspicion",
-        label: "Speicherstand im Kampagnenportal prüfen",
+        id: "follow-route-with-suspicion",
+        label: "Mit Misstrauen zur Handelsroute aufbrechen",
         description:
-          "Öffne den Main-Bereich und prüfe, ob diese Entscheidung als Speicherstand vorhanden ist.",
-        nextSceneId: "auftrag-misstrauen",
+          "Du behältst Varians Lücken im Kopf und prüfst die Spur selbst.",
+        nextSceneId: "innere-handelsroute",
       },
     ],
   },
@@ -515,6 +515,179 @@ export const scenes: Scene[] = [
         description:
           "Du trittst einen Schritt zurück, bevor der Auftrag scheitert, bevor er begonnen hat.",
         nextSceneId: "auftrag-angenommen",
+      },
+    ],
+  },
+  {
+    id: "innere-handelsroute",
+    title: "Die innere Handelsroute",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1",
+    speaker: "DM",
+    imageUrl: "/scenes/prolog-stolen-egg.png",
+    narration:
+      "Die Handelsroute liegt unter kaltem Regen. Wagenspuren kreuzen sich, Laternen flackern im Wind, und irgendwo zwischen Marktständen und Wachposten endet Varians sichere Information.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Die Skizze führt euch zur inneren Handelsroute. Hier wurde das Ei zuletzt offiziell gesehen.",
+      },
+      {
+        speaker: "DM",
+        text: "Zwischen nassem Pflaster, gebrochenen Radspuren und nervösen Blicken liegt die erste echte Spur.",
+      },
+    ],
+    choices: [
+      {
+        id: "investigate-trade-route",
+        label: "Die Radspuren und Wachmarken untersuchen",
+        description:
+          "Du prüfst, ob die Route manipuliert wurde und welche Spur wirklich zum Ei gehört.",
+        nextSceneId: "handelsroute-spur-erkannt",
+        failureSceneId: "handelsroute-spur-verloren",
+        natural20SceneId: "handelsroute-spur-perfekt",
+        natural1SceneId: "handelsroute-spur-falsch",
+        checks: [
+          {
+            ability: "INT",
+            skill: "Investigation",
+            dc: 13,
+          },
+          {
+            ability: "WIS",
+            skill: "Survival",
+            dc: 13,
+          },
+        ],
+      },
+      {
+        id: "question-route-witnesses",
+        label: "Zeugen vorsichtig befragen",
+        description:
+          "Du suchst nach jemandem, der mehr gesehen hat, als er öffentlich sagen will.",
+        nextSceneId: "handelsroute-spur-erkannt",
+        failureSceneId: "handelsroute-spur-verloren",
+        check: {
+          ability: "CHA",
+          skill: "Persuasion",
+          dc: 12,
+        },
+      },
+    ],
+  },
+  {
+    id: "handelsroute-spur-erkannt",
+    title: "Eine Spur im Regen",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1",
+    speaker: "DM",
+    imageUrl: "/scenes/prolog-stolen-egg.png",
+    narration:
+      "Eine Spur löst sich aus dem Chaos. Jemand hat versucht, die Route zu verschleiern, aber nicht gut genug.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Du findest Hinweise auf einen Wagen, der die offizielle Route verlassen hat.",
+      },
+      {
+        speaker: "DM",
+        text: "Die Spur führt nicht zum Haupttor, sondern tiefer in Richtung Unterstadt.",
+      },
+    ],
+    choices: [
+      {
+        id: "secure-trade-route-save",
+        label: "Speicherstand sichern und Spur markieren",
+        description:
+          "Du hältst die neue Spur fest. Der nächste Abschnitt führt Richtung Unterstadt.",
+        nextSceneId: "handelsroute-spur-erkannt",
+      },
+    ],
+  },
+  {
+    id: "handelsroute-spur-verloren",
+    title: "Verwaschene Spuren",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1",
+    speaker: "DM",
+    imageUrl: "/scenes/prolog-stolen-egg.png",
+    narration:
+      "Der Regen nimmt euch mehr Hinweise, als er offenlegt. Ihr findet genug, um weiterzugehen, aber nicht genug, um sicher zu sein.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Die Spuren verlaufen ineinander. Etwas wurde absichtlich verwischt.",
+      },
+      {
+        speaker: "DM",
+        text: "Trotzdem bleibt ein Muster: Die Unterstadt taucht zu oft in den Gerüchten auf.",
+      },
+    ],
+    choices: [
+      {
+        id: "move-to-understadt-with-risk",
+        label: "Trotz unsicherer Spur Richtung Unterstadt gehen",
+        description:
+          "Du gehst weiter, auch wenn die nächste Szene gefährlicher beginnen könnte.",
+        nextSceneId: "handelsroute-spur-verloren",
+      },
+    ],
+  },
+  {
+    id: "handelsroute-spur-perfekt",
+    title: "Die perfekte Fährte",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1",
+    speaker: "DM",
+    imageUrl: "/scenes/prolog-stolen-egg.png",
+    narration:
+      "Für einen Moment ergibt alles Sinn: die Radspur, die Wachmarke, die Lüge des Zeugen. Die Fährte ist klar.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Du erkennst, dass der Wagen absichtlich als Handelslieferung getarnt wurde.",
+      },
+      {
+        speaker: "DM",
+        text: "Eine eingeritzte Markierung verweist auf einen alten Zugang zur Unterstadt.",
+      },
+    ],
+    choices: [
+      {
+        id: "mark-perfect-trail",
+        label: "Die Fährte sichern",
+        description:
+          "Du markierst die saubere Spur und bereitest den nächsten Abschnitt vor.",
+        nextSceneId: "handelsroute-spur-erkannt",
+      },
+    ],
+  },
+  {
+    id: "handelsroute-spur-falsch",
+    title: "Eine Falle aus Spuren",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1",
+    speaker: "DM",
+    imageUrl: "/scenes/prolog-stolen-egg.png",
+    narration:
+      "Die erste Spur wirkt zu klar. Erst zu spät merkst du, dass jemand wollte, dass du genau dorthin schaust.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Du folgst einer falschen Markierung. Für einen Moment verlierst du die echte Route.",
+      },
+      {
+        speaker: "DM",
+        text: "Doch der Fehler zeigt dir etwas Wichtiges: Jemand schützt den Weg zur Unterstadt aktiv.",
+      },
+    ],
+    choices: [
+      {
+        id: "recover-false-trail",
+        label: "Die falsche Spur korrigieren",
+        description:
+          "Du ordnest die Hinweise neu und gehst vorsichtiger weiter.",
+        nextSceneId: "handelsroute-spur-verloren",
       },
     ],
   },
