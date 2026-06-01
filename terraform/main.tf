@@ -107,15 +107,6 @@ resource "aws_iam_instance_profile" "ec2_profile" {
   role = aws_iam_role.ec2_role.name
 }
 
-resource "aws_ecr_repository" "frontend" {
-  name         = "falkenwacht-frontend"
-  force_delete = true
-
-  tags = {
-    Name = "falkenwacht-frontend"
-  }
-}
-
 resource "aws_eip" "falkenwacht_eip" {
   instance = aws_instance.falkenwacht_server.id
 
