@@ -50,6 +50,13 @@ terraform apply -var="db_password=DEIN_PASSWORT"
 
 ---
 
+## Live Backend
+
+The backend is deployed on AWS EC2 with an Elastic IP for a static, persistent address.
+
+- API: http://18.157.116.245:8000
+- Docs: http://18.157.116.245:8000/docs
+
 ## Running Locally
 
 Make sure Docker is installed, then:
