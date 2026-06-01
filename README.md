@@ -50,12 +50,13 @@ terraform apply -var="db_password=DEIN_PASSWORT"
 
 ---
 
-## Live Backend
+## Live
 
-The backend is deployed on AWS EC2 with an Elastic IP for a static, persistent address.
+The full stack is deployed on AWS EC2 with an Elastic IP for a static, persistent address. The frontend image is built in CI and stored in Amazon ECR.
 
+- Frontend: http://18.157.116.245:3000
 - API: http://18.157.116.245:8000
-- Docs: http://18.157.116.245:8000/docs
+- API Docs: http://18.157.116.245:8000/docs
 
 ## Running Locally
 
