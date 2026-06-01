@@ -386,6 +386,7 @@ Beispiel-Antwort:
 ### POST /inventory/action
 
 Fuehrt eine validierte Inventory-Aktion auf einem uebergebenen Savegame-State aus. Das Backend entscheidet, ob `use`, `equip`, `unequip` oder `drop` erlaubt ist, und gibt den neuen State plus sichtbare Events zurueck.
+Healing Potion nutzt echte DnD-5e-Heilung `2d4+2`. HP-Aenderungen fuer Schaden und Heilung werden ausschliesslich backendseitig berechnet und validiert.
 
 Beispiel-Request:
 
@@ -433,7 +434,18 @@ Beispiel-Antwort:
     },
     {
       "type": "hp_change",
-      "item_id": "healing_potion"
+      "item_id": "healing_potion",
+      "payload": {
+        "previous_hp": 10,
+        "remaining_hp": 17,
+        "healing": {
+          "dice_count": 2,
+          "die_sides": 4,
+          "modifier": 2,
+          "rolls": [1, 4],
+          "total": 7
+        }
+      }
     }
   ]
 }
@@ -442,6 +454,7 @@ Beispiel-Antwort:
 ### POST /saves/{slot_name}/inventory/action
 
 Fuehrt dieselbe validierte Inventory-Aktion direkt auf einem gespeicherten Slot aus und persistiert den neuen State.
+Auch hier werden Healing Rolls und HP-Aenderungen im Backend berechnet; das Frontend sendet nur `item_id` und `action`.
 
 Beispiel:
 

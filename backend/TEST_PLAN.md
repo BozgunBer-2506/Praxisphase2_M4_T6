@@ -64,6 +64,8 @@ Ziel: Die vorhandene FastAPI-Grundstruktur soll mit kleinen, schnellen Tests abg
 - `POST /inventory/view` reichert Savegame-Inventory mit Backend-Metadaten, Effekten und erlaubten Aktionen an.
 - `POST /inventory/action` validiert `use`, `equip`, `unequip` und `drop` backendseitig und gibt neuen State plus Events zurueck.
 - `POST /saves/{slot_name}/inventory/action` fuehrt dieselbe Aktion auf einem Save-Slot aus und persistiert den neuen State.
+- Healing Potion nutzt echte `2d4+2`-Wuerfe; Tests injizieren feste Rolls nur fuer deterministische Pruefung.
+- HP-Heilung wird bei `max_hp` gekappt und HP-Aenderungen werden nur backendseitig berechnet.
 - Unbekannte Items bekommen keine erlaubten Aktionen, bis sie im Backend-Katalog definiert sind.
 
 ## Bewusst noch nicht getestet

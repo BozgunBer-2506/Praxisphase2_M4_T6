@@ -280,9 +280,14 @@ def test_inventory_action_uses_healing_potion():
 
     assert response.status_code == 200
     body = response.json()
-    assert body["state"]["main_character"]["current_hp"] == 20
+    assert 14 <= body["state"]["main_character"]["current_hp"] <= 20
     assert body["state"]["inventory"] == []
     assert [event["type"] for event in body["events"]] == ["inventory_use", "hp_change"]
+    healing = body["events"][1]["payload"]["healing"]
+    assert len(healing["rolls"]) == 2
+    assert all(1 <= roll <= 4 for roll in healing["rolls"])
+    assert healing["modifier"] == 2
+    assert healing["total"] == sum(healing["rolls"]) + 2
 
 
 def test_inventory_action_rejects_invalid_item_action():
@@ -409,9 +414,9 @@ def test_save_inventory_action_persists_updated_state():
         assert action_response.status_code == 200
         body = action_response.json()
         assert body["slot_name"] == "inventory-action"
-        assert body["state"]["main_character"]["current_hp"] == 20
+        assert 14 <= body["state"]["main_character"]["current_hp"] <= 20
         assert body["state"]["inventory"] == []
-        assert load_response.json()["state"]["main_character"]["current_hp"] == 20
+        assert load_response.json()["state"]["main_character"]["current_hp"] == body["state"]["main_character"]["current_hp"]
         assert load_response.json()["state"]["inventory"] == []
     finally:
         main.app.dependency_overrides.clear()

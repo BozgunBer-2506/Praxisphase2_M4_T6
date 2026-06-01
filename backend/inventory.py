@@ -1,3 +1,6 @@
+from dice import roll_damage
+
+
 ITEM_CATALOG = {
     "torch": {
         "item_id": "torch",
@@ -36,9 +39,8 @@ ITEM_CATALOG = {
 }
 
 
-def fixed_healing_roller(dice_count: int, die_sides: int, modifier: int) -> dict:
-    rolls = [die_sides for _ in range(dice_count)]
-    return {"rolls": rolls, "modifier": modifier, "total": sum(rolls) + modifier}
+def roll_healing(dice_count: int, die_sides: int, modifier: int, roller=None) -> dict:
+    return roll_damage(dice_count, die_sides, modifier, roller=roller)
 
 
 def list_item_catalog() -> list[dict]:
@@ -78,7 +80,7 @@ def apply_inventory_action(
     state: dict,
     item_id: str,
     action: str,
-    healing_roller=fixed_healing_roller,
+    roller=None,
 ) -> dict:
     next_state = {
         **state,
@@ -92,7 +94,7 @@ def apply_inventory_action(
 
     events = []
     if action == "use":
-        events.extend(_use_item(next_state, item, definition, healing_roller))
+        events.extend(_use_item(next_state, item, definition, roller))
     elif action == "equip":
         events.extend(_equip_item(next_state, item, definition))
     elif action == "unequip":
@@ -114,11 +116,11 @@ def _find_inventory_item(inventory_state: list[dict], item_id: str) -> dict:
     raise ValueError(f"Item '{item_id}' is not in inventory")
 
 
-def _use_item(state: dict, item: dict, definition: dict, healing_roller) -> list[dict]:
+def _use_item(state: dict, item: dict, definition: dict, roller) -> list[dict]:
     events = [{"type": "inventory_use", "item_id": item["item_id"]}]
     heal = definition.get("effect", {}).get("heal")
     if heal:
-        result = healing_roller(heal["dice_count"], heal["die_sides"], heal.get("modifier", 0))
+        result = roll_healing(heal["dice_count"], heal["die_sides"], heal.get("modifier", 0), roller=roller)
         character = state["main_character"]
         previous_hp = character["current_hp"]
         character["current_hp"] = min(character["max_hp"], previous_hp + result["total"])

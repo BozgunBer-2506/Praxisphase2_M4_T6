@@ -1,6 +1,11 @@
 from inventory import apply_inventory_action, build_inventory_view, get_item_definition, list_item_catalog
 
 
+def sequence_roller(values):
+    rolls = iter(values)
+    return lambda _minimum, _maximum: next(rolls)
+
+
 def test_catalog_contains_usable_and_equipable_items():
     catalog = {item["item_id"]: item for item in list_item_catalog()}
 
@@ -38,11 +43,29 @@ def test_apply_use_healing_potion_updates_hp_and_quantity():
         "inventory": [{"item_id": "healing_potion", "name": "Healing Potion", "quantity": 2}],
     }
 
-    result = apply_inventory_action(state, "healing_potion", "use")
+    result = apply_inventory_action(state, "healing_potion", "use", roller=sequence_roller([1, 4]))
 
-    assert result["state"]["main_character"]["current_hp"] == 20
+    assert result["state"]["main_character"]["current_hp"] == 17
     assert result["state"]["inventory"][0]["quantity"] == 1
     assert [event["type"] for event in result["events"]] == ["inventory_use", "hp_change"]
+    healing = result["events"][1]["payload"]["healing"]
+    assert healing["rolls"] == [1, 4]
+    assert healing["total"] == 7
+
+
+def test_apply_use_healing_potion_caps_at_max_hp():
+    state = {
+        "main_character": {"character_id": "ayane", "current_hp": 25, "max_hp": 28, "conditions": []},
+        "story_flags": {},
+        "inventory": [{"item_id": "healing_potion", "name": "Healing Potion", "quantity": 1}],
+    }
+
+    result = apply_inventory_action(state, "healing_potion", "use", roller=sequence_roller([4, 4]))
+
+    assert result["state"]["main_character"]["current_hp"] == 28
+    assert result["events"][1]["payload"]["previous_hp"] == 25
+    assert result["events"][1]["payload"]["remaining_hp"] == 28
+    assert result["events"][1]["payload"]["healing"]["total"] == 10
 
 
 def test_apply_equip_marks_same_slot_items_exclusive():
