@@ -56,5 +56,7 @@ jobs:
             sleep 5
           done
           scp -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no -r backend ubuntu@$ip:/home/ubuntu/
+          ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no ubuntu@$ip "mkdir -p /home/ubuntu/Projekt_M4T6"
+          scp -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no -r Projekt_M4T6/frontend ubuntu@$ip:/home/ubuntu/Projekt_M4T6/
           scp -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no docker-compose.yml ubuntu@$ip:/home/ubuntu/docker-compose.yml
-          ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no ubuntu@$ip "cd /home/ubuntu && sudo DOCKER_BUILDKIT=0 docker compose up -d --build db backend"
+          ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no ubuntu@$ip "cd /home/ubuntu && sudo DOCKER_BUILDKIT=0 docker compose up -d --build"
