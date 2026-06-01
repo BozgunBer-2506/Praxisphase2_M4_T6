@@ -76,6 +76,14 @@ resource "aws_instance" "falkenwacht_server" {
   }
 }
 
+resource "aws_eip" "falkenwacht_eip" {
+  instance = aws_instance.falkenwacht_server.id
+
+  tags = {
+    Name = "falkenwacht-eip"
+  }
+}
+
 resource "aws_db_instance" "falkenwacht_db" {
   identifier        = "falkenwacht-db"
   engine            = "postgres"
