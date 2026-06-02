@@ -28,6 +28,19 @@ import {
   initialSceneId,
   scenes,
 } from "@/data/scenes";
+import {
+  type CombatResolveResponse,
+  type HudEvent,
+  type InventoryAction,
+  type InventoryStateItem,
+  type InventoryViewItem,
+  type SaveGameState,
+  createOrUpdateSave,
+  getInventoryView,
+  narrateWithAiDm,
+  resolveCombat,
+  runSaveInventoryAction,
+} from "@/lib/backendApi";
 
 const SAVE_KEY = "falkenwacht.saveStates";
 const LAST_SAVE_KEY = "falkenwacht.lastSave";
@@ -36,6 +49,79 @@ const MAX_CAMPAIGN_SAVES = 5;
 const CAMPAIGN_TITLE = "Falkenwacht - Die Korruption der Greifenstadt";
 const WORD_REVEAL_MS = 85;
 const diceTypes = [4, 6, 8, 10, 12, 20, 100] as const;
+const BACKEND_SLOT_NAME = "autosave";
+
+const createId = () =>
+  globalThis.crypto?.randomUUID?.() ??
+  `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
+const toBackendCharacterId = (characterId: CharacterId) =>
+  characterId === "ryu" ? "ayane" : "johan";
+
+const parseDiceFormula = (formula: string) => {
+  const normalizedFormula = formula.replace(/\s/g, "");
+  const match = normalizedFormula.match(/^(\d*)d(\d+)([+-]\d+)?$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    diceCount: Number(match[1] || "1"),
+    diceType: Number(match[2]),
+    modifier: Number(match[3] || "0"),
+  };
+};
+
+const buildCombatHudEvents = (response: CombatResolveResponse): HudEvent[] => {
+  const events: HudEvent[] = [
+    {
+      type: "attack_roll",
+      label: "Angriff",
+      payload: response.attack,
+    },
+  ];
+
+  if (response.attack.hit) {
+    events.push(
+      {
+        type: "damage",
+        label: "Schaden",
+        payload: response.damage,
+      },
+      {
+        type: "hp_change",
+        label: "Ziel-HP",
+        payload: response.hp,
+      },
+    );
+  }
+
+  return events;
+};
+
+const characterRuleStats: Record<CharacterId, { dexModifier: number }> = {
+  ryu: { dexModifier: 2 },
+  ayane: { dexModifier: 0 },
+};
+
+const initialInventory: InventoryStateItem[] = [
+  {
+    item_id: "healing_potion",
+    name: "Healing Potion",
+    quantity: 2,
+  },
+  {
+    item_id: "torch",
+    name: "Torch",
+    quantity: 1,
+  },
+  {
+    item_id: "leather_armor",
+    name: "Leather Armor",
+    quantity: 1,
+  },
+];
 
 const characterSheets = {
   ryu: {
@@ -147,6 +233,12 @@ type SaveState = {
   createdAt: string;
 };
 
+type RuntimeStats = {
+  currentHp: number;
+  maxHp: number;
+  ac: number;
+};
+
 type RollMode = "normal" | "advantage" | "disadvantage";
 
 type RollResult = {
@@ -180,8 +272,30 @@ type PendingCheck = {
   checks: SkillCheck[];
 };
 
+type InitiativeActor = {
+  id: string;
+  name: string;
+  kind: "player" | "companion" | "enemy";
+  total?: number;
+};
+
 const findScene = (sceneId: string) =>
   scenes.find((scene) => scene.id === sceneId) ?? scenes[0];
+
+const calculateArmorClass = (
+  characterId: CharacterId,
+  inventory: InventoryStateItem[],
+) => {
+  const leatherArmor = inventory.find(
+    (item) => item.item_id === "leather_armor" && item.equipped,
+  );
+
+  if (leatherArmor) {
+    return 11 + characterRuleStats[characterId].dexModifier;
+  }
+
+  return characters[characterId].stats.ac;
+};
 
 const readSaveStates = (): SaveState[] => {
   if (typeof window === "undefined") {
@@ -221,6 +335,43 @@ export default function Home() {
   const [isSheetExpanded, setIsSheetExpanded] = useState(true);
   const [isSkillsExpanded, setIsSkillsExpanded] = useState(true);
   const [isActionsExpanded, setIsActionsExpanded] = useState(true);
+  const [isInventoryExpanded, setIsInventoryExpanded] = useState(true);
+  const [isCompanionExpanded, setIsCompanionExpanded] = useState(false);
+  const [inventoryState, setInventoryState] =
+    useState<InventoryStateItem[]>(initialInventory);
+  const [inventoryItems, setInventoryItems] = useState<InventoryViewItem[]>([]);
+  const [inventoryStatus, setInventoryStatus] = useState(
+    "Inventory bereit, Backend-Abgleich ausstehend.",
+  );
+  const [combatTargetHp, setCombatTargetHp] = useState(20);
+  const [combatStatus, setCombatStatus] = useState(
+    "Trainingsziel bereit: AC 14, HP 20.",
+  );
+  const [initiativeRolls, setInitiativeRolls] = useState<
+    Partial<Record<CharacterId, number>>
+  >({});
+  const [initiativeRollModes, setInitiativeRollModes] = useState<
+    Partial<Record<CharacterId, RollMode>>
+  >({});
+  const [initiativeOrder, setInitiativeOrder] = useState<InitiativeActor[]>([]);
+  const [initiativeStatus, setInitiativeStatus] = useState(
+    "Initiative offen: Ryu und Ayane müssen würfeln.",
+  );
+  const [runtimeStats, setRuntimeStats] = useState<Record<CharacterId, RuntimeStats>>(
+    () => ({
+      ryu: {
+        currentHp: characters.ryu.stats.hp,
+        maxHp: characters.ryu.stats.hp,
+        ac: characters.ryu.stats.ac,
+      },
+      ayane: {
+        currentHp: characters.ayane.stats.hp,
+        maxHp: characters.ayane.stats.hp,
+        ac: characters.ayane.stats.ac,
+      },
+    }),
+  );
+  const [hudEvents, setHudEvents] = useState<HudEvent[]>([]);
   const [pendingCheck, setPendingCheck] = useState<PendingCheck | null>(null);
   const [gameLog, setGameLog] = useState<GameLogEntry[]>([
     {
@@ -287,7 +438,41 @@ export default function Home() {
   const activeSheet = selectedCharacterId
     ? characterSheets[selectedCharacterId]
     : null;
+  const activeRuntimeStats = selectedCharacterId
+    ? runtimeStats[selectedCharacterId]
+    : null;
+  const companionSheet = activeNpc ? characterSheets[activeNpc.id] : null;
+  const companionRuntimeStats = activeNpc ? runtimeStats[activeNpc.id] : null;
+  const isInitiativeScene = currentScene.id === "kampf-initiative-start";
+  const isCombatScene =
+    currentScene.id.startsWith("kampf-") ||
+    currentScene.id === "hinterhalt-handelsroute";
   const actorName = activeCharacter?.name ?? "Der Charakter";
+  const backendSaveState = useMemo<SaveGameState>(() => {
+    const mainCharacter = activeCharacter ?? characters.ryu;
+    const companion = activeNpc ?? characters.ayane;
+    const mainRuntime = runtimeStats[mainCharacter.id];
+    const companionRuntime = runtimeStats[companion.id];
+
+    return {
+      main_character: {
+        character_id: toBackendCharacterId(mainCharacter.id),
+        current_hp: mainRuntime.currentHp,
+        max_hp: mainRuntime.maxHp,
+        conditions: [],
+      },
+      npc_companion: {
+        character_id: toBackendCharacterId(companion.id),
+        current_hp: companionRuntime.currentHp,
+        max_hp: companionRuntime.maxHp,
+        conditions: [],
+      },
+      story_flags: {
+        egg_stolen: true,
+      },
+      inventory: inventoryState,
+    };
+  }, [activeCharacter, activeNpc, inventoryState, runtimeStats]);
   const pendingSkillNames = new Set(
     pendingCheck?.checks
       .map((check) => check.skill)
@@ -297,12 +482,261 @@ export default function Home() {
   const addGameLog = (entry: Omit<GameLogEntry, "id" | "createdAt">) => {
     setGameLog((items) => [
       {
-        id: crypto.randomUUID(),
+        id: createId(),
         createdAt: new Date().toISOString(),
         ...entry,
       },
       ...items,
     ].slice(0, 20));
+  };
+
+  const formatHudEvent = (event: HudEvent) => {
+    const payload = event.payload ?? {};
+    const healing = payload.healing;
+
+    if (
+      event.type === "hp_change" &&
+      typeof healing === "object" &&
+      healing !== null &&
+      "total" in healing &&
+      "modifier" in healing &&
+      "rolls" in healing &&
+      typeof healing.total === "number" &&
+      typeof healing.modifier === "number" &&
+      Array.isArray(healing.rolls)
+    ) {
+      return `Healing Potion: 2d4 + ${healing.modifier} = +${healing.total} HP (Würfe ${healing.rolls.join(" / ")})`;
+    }
+
+    if (event.type === "inventory_equip") {
+      return `${event.item_id ?? "Item"} ausgerüstet`;
+    }
+
+    if (event.type === "inventory_unequip") {
+      return `${event.item_id ?? "Item"} abgelegt`;
+    }
+
+    if (
+      event.type === "attack_roll" &&
+      typeof payload.roll === "number" &&
+      typeof payload.modifier === "number" &&
+      typeof payload.total === "number" &&
+      typeof payload.target_ac === "number"
+    ) {
+      const hitText = payload.hit ? "Treffer" : "Verfehlt";
+      const criticalText = payload.critical ? " · Kritisch" : "";
+
+      return `Angriff: d20 ${payload.roll} + Mod ${payload.modifier} = ${payload.total} gegen AC ${payload.target_ac} · ${hitText}${criticalText}`;
+    }
+
+    if (
+      event.type === "damage" &&
+      typeof payload.dice_count === "number" &&
+      typeof payload.die_sides === "number" &&
+      typeof payload.modifier === "number" &&
+      typeof payload.total === "number" &&
+      Array.isArray(payload.rolls)
+    ) {
+      return `Schaden: ${payload.dice_count}d${payload.die_sides} + ${payload.modifier} = ${payload.total} (Würfe ${payload.rolls.join(" / ")})`;
+    }
+
+    if (
+      event.type === "hp_change" &&
+      typeof payload.previous_hp === "number" &&
+      typeof payload.damage === "number" &&
+      typeof payload.remaining_hp === "number"
+    ) {
+      return `Ziel-HP: ${payload.previous_hp} - ${payload.damage} = ${payload.remaining_hp}`;
+    }
+
+    const total = payload.total ?? payload.remaining_hp ?? payload.hit;
+
+    return `${event.label ?? event.type}${total !== undefined ? `: ${String(total)}` : ""}`;
+  };
+
+  const applyHudEvents = (events: HudEvent[]) => {
+    if (events.length === 0) {
+      return;
+    }
+
+    setHudEvents((items) => [...events, ...items].slice(0, 8));
+    addGameLog({
+      title: "Backend-HUD Events",
+      detail: events.map(formatHudEvent).join(" | "),
+    });
+
+    const visibleEvent = events.find((event) => event.type === "damage") ??
+      events.find((event) => event.type === "hp_change") ??
+      events.find((event) => {
+      const payload = event.payload ?? {};
+      const healing = payload.healing;
+
+      return (
+        typeof payload.total === "number" ||
+        (typeof healing === "object" &&
+          healing !== null &&
+          "total" in healing &&
+          typeof healing.total === "number") ||
+        typeof payload.remaining_hp === "number"
+      );
+    });
+
+    if (!visibleEvent) {
+      return;
+    }
+
+    const payload = visibleEvent.payload ?? {};
+    const healing = payload.healing;
+    const healingRolls =
+      typeof healing === "object" &&
+      healing !== null &&
+      "rolls" in healing &&
+      Array.isArray(healing.rolls)
+        ? healing.rolls.filter((roll): roll is number => typeof roll === "number")
+        : null;
+    const healingModifier =
+      typeof healing === "object" &&
+      healing !== null &&
+      "modifier" in healing &&
+      typeof healing.modifier === "number"
+        ? healing.modifier
+        : null;
+    const payloadRolls = Array.isArray(payload.rolls)
+      ? payload.rolls.filter((roll): roll is number => typeof roll === "number")
+      : null;
+    const attackRolls =
+      typeof payload.roll === "number" ? [payload.roll] : null;
+    const eventRolls = healingRolls ?? payloadRolls ?? attackRolls;
+    const eventModifier =
+      typeof payload.modifier === "number" ? payload.modifier : healingModifier;
+    const eventDiceType =
+      typeof payload.die_sides === "number"
+        ? payload.die_sides
+        : eventRolls === healingRolls
+          ? 4
+          : 20;
+    const total =
+      typeof payload.total === "number"
+        ? payload.total
+        : typeof healing === "object" &&
+            healing !== null &&
+            "total" in healing &&
+            typeof healing.total === "number"
+          ? healing.total
+          : typeof payload.remaining_hp === "number"
+        ? payload.remaining_hp
+        : 0;
+
+    setRollResult({
+      diceType: eventDiceType,
+      rolls: eventRolls ?? [total],
+      selectedRoll: total,
+      modifier: eventModifier ?? 0,
+      total,
+      mode: "normal",
+      label:
+        healingRolls && healingModifier !== null
+          ? "Healing Potion 2d4 + 2"
+          : visibleEvent.label ?? visibleEvent.type,
+    });
+    setRollAnimationKey((currentKey) => currentKey + 1);
+  };
+
+  const syncInventoryView = async (nextInventory = inventoryState) => {
+    try {
+      const response = await getInventoryView(nextInventory);
+      setInventoryItems(response.items);
+      setInventoryStatus("Inventory mit Backend synchronisiert.");
+    } catch (error) {
+      setInventoryItems(nextInventory);
+      setInventoryStatus(
+        "Backend nicht erreichbar. Inventory bleibt lokal sichtbar.",
+      );
+      void error;
+    }
+  };
+
+  const syncBackendSave = async (state = backendSaveState) => {
+    if (!selectedCharacterId) {
+      return;
+    }
+
+    try {
+      await createOrUpdateSave({
+        slot_name: BACKEND_SLOT_NAME,
+        character_id: toBackendCharacterId(selectedCharacterId),
+        scene_number:
+          scenes.findIndex((scene) => scene.id === currentSceneId) + 1 || 1,
+        state,
+      });
+    } catch (error) {
+      void error;
+    }
+  };
+
+  const getInventoryDescription = (item: InventoryViewItem) => {
+    if (item.item_id === "healing_potion") {
+      return "Potion of Healing nach D&D 5e: heilt 2d4 + 2 HP und wird beim Benutzen verbraucht.";
+    }
+
+    if (item.item_id === "leather_armor" && selectedCharacterId) {
+      const armorClass = 11 + characterRuleStats[selectedCharacterId].dexModifier;
+
+      return `Leather Armor nach D&D 5e: AC 11 + DEX-Modifikator. Für ${actorName}: AC ${armorClass}.`;
+    }
+
+    return item.description;
+  };
+
+  const handleInventoryAction = async (
+    item: InventoryViewItem,
+    action: InventoryAction,
+  ) => {
+    setInventoryStatus(`${item.name}: ${action} wird über Backend geprüft...`);
+
+    try {
+      await syncBackendSave();
+      const response = await runSaveInventoryAction(
+        BACKEND_SLOT_NAME,
+        item.item_id,
+        action,
+      );
+
+      setInventoryState(response.state.inventory);
+      setInventoryItems(response.inventory);
+      if (selectedCharacterId) {
+        setRuntimeStats((currentStats) => ({
+          ...currentStats,
+          [selectedCharacterId]: {
+            ...currentStats[selectedCharacterId],
+            currentHp: response.state.main_character.current_hp,
+            maxHp: response.state.main_character.max_hp,
+            ac: calculateArmorClass(selectedCharacterId, response.state.inventory),
+          },
+        }));
+      }
+      applyHudEvents(response.events);
+      const healingEvent = response.events.find(
+        (event) => event.type === "hp_change",
+      );
+      const healing = healingEvent?.payload?.healing;
+      const healingText =
+        typeof healing === "object" && healing !== null && "total" in healing
+          ? ` Heilung: ${String(healing.total)} HP.`
+          : "";
+      const armorText =
+        item.item_id === "leather_armor" && selectedCharacterId
+          ? ` AC jetzt ${calculateArmorClass(selectedCharacterId, response.state.inventory)}.`
+          : "";
+
+      setInventoryStatus(`${item.name}: ${action} ausgeführt.${healingText}${armorText}`);
+    } catch (error) {
+      setInventoryStatus(`Aktion fehlgeschlagen: ${item.name} (${action}).`);
+      addGameLog({
+        title: "Inventory-Aktion fehlgeschlagen",
+        detail: error instanceof Error ? error.message : "Unbekannter Fehler",
+      });
+    }
   };
 
   const getChoiceChecks = (choice: Choice) =>
@@ -332,6 +766,25 @@ export default function Home() {
       : personalized;
   };
 
+  const buildLocalDmAnswer = (question: string) => {
+    const options = currentScene.choices
+      .map((choice) => choice.label)
+      .join(", ");
+
+    return [
+      `Aktuelle Szene: ${currentScene.title}.`,
+      currentScene.narration,
+      options
+        ? `Mögliche nächste Schritte: ${options}.`
+        : "Aktuell gibt es keine offene Spieleroption.",
+      `Deine Frage: ${question}`,
+    ].join(" ");
+  };
+
+  const shouldUseLocalDmAnswer = (narration: string) =>
+    narration.includes("Die Szene reagiert auf deine Entscheidung") ||
+    narration.startsWith(`${currentScene.title}:`);
+
   const persistSaveState = (
     sceneId: string,
     characterId: CharacterId,
@@ -343,7 +796,7 @@ export default function Home() {
 
     const targetScene = findScene(sceneId);
     const saveState: SaveState = {
-      id: crypto.randomUUID(),
+      id: createId(),
       campaignTitle: CAMPAIGN_TITLE,
       sessionTitle: targetScene.chapter,
       sceneId,
@@ -370,6 +823,22 @@ export default function Home() {
   };
 
   const goToScene = (sceneId: string) => {
+    if (sceneId === "kampf-initiative-start" && currentSceneId !== sceneId) {
+      const advantageNames = (["ryu", "ayane"] as CharacterId[])
+        .filter((characterId) => initiativeRollModes[characterId] === "advantage")
+        .map((characterId) => characters[characterId].name);
+
+      setInitiativeRolls({});
+      setInitiativeOrder([]);
+      setInitiativeStatus(
+        advantageNames.length > 0
+          ? `Initiative offen: Ryu und Ayane müssen würfeln. ${advantageNames.join(
+              " und ",
+            )} würfelt mit Vorteil.`
+          : "Initiative offen: Ryu und Ayane müssen würfeln.",
+      );
+    }
+
     setCurrentSceneId(sceneId);
     setDialogueLineIndex(0);
     setVisibleWordCount(0);
@@ -395,7 +864,7 @@ export default function Home() {
       setDmMessages((messages) => [
         ...messages,
         {
-          id: crypto.randomUUID(),
+          id: createId(),
           sender: "DM",
           text: dmHint,
         },
@@ -464,29 +933,47 @@ export default function Home() {
   const rollFormula = (
     label: string,
     formula: string,
-    options?: { skill?: string },
+    options?: {
+      skill?: string;
+      initiativeCharacterId?: CharacterId;
+      rollMode?: RollMode;
+    },
   ) => {
-    const normalizedFormula = formula.replace(/\s/g, "");
-    const match = normalizedFormula.match(/^(\d*)d(\d+)([+-]\d+)?$/i);
+    const parsedFormula = parseDiceFormula(formula);
 
-    if (!match) {
+    if (!parsedFormula) {
       return;
     }
 
-    const diceCount = Number(match[1] || "1");
-    const formulaDiceType = Number(match[2]);
-    const modifier = Number(match[3] || "0");
-    const rolls = Array.from({ length: diceCount }, () =>
-      Math.floor(Math.random() * formulaDiceType) + 1,
-    );
-    const selectedRoll = rolls.reduce((sum, roll) => sum + roll, 0);
+    const {
+      diceCount,
+      diceType: formulaDiceType,
+      modifier,
+    } = parsedFormula;
+    const rollOnce = () => Math.floor(Math.random() * formulaDiceType) + 1;
+    const effectiveRollMode =
+      options?.initiativeCharacterId && formulaDiceType === 20
+        ? initiativeRollModes[options.initiativeCharacterId] ?? "normal"
+        : options?.rollMode ?? "normal";
+    const rolls =
+      diceCount === 1 && formulaDiceType === 20 && effectiveRollMode !== "normal"
+        ? [rollOnce(), rollOnce()]
+        : Array.from({ length: diceCount }, rollOnce);
+    const selectedRoll =
+      diceCount === 1 && formulaDiceType === 20 && effectiveRollMode === "advantage"
+        ? Math.max(...rolls)
+        : diceCount === 1 &&
+            formulaDiceType === 20 &&
+            effectiveRollMode === "disadvantage"
+          ? Math.min(...rolls)
+          : rolls.reduce((sum, roll) => sum + roll, 0);
     const result = {
       diceType: formulaDiceType,
       rolls,
       selectedRoll,
       modifier,
       total: selectedRoll + modifier,
-      mode: "normal" as RollMode,
+      mode: effectiveRollMode,
       label,
     };
 
@@ -494,9 +981,119 @@ export default function Home() {
     setRollAnimationKey((currentKey) => currentKey + 1);
     addGameLog({
       title: label,
-      detail: `Wurf ${rolls.join(" + ")} + Mod ${modifier} · Ergebnis ${result.total}`,
+      detail:
+        rolls.length > 1
+          ? `Würfe ${rolls.join(" / ")} · ${
+              effectiveRollMode === "advantage" ? "Vorteil" : "Nachteil"
+            } · Mod ${modifier} · Ergebnis ${result.total}`
+          : `Wurf ${rolls.join(" + ")} + Mod ${modifier} · Ergebnis ${result.total}`,
       total: result.total,
     });
+
+    if (options?.initiativeCharacterId && isInitiativeScene) {
+      const initiativeCharacterId = options.initiativeCharacterId;
+      const nextInitiativeRolls = {
+        ...initiativeRolls,
+        [initiativeCharacterId]: result.total,
+      };
+      setInitiativeRollModes((modes) => ({
+        ...modes,
+        [initiativeCharacterId]: "normal",
+      }));
+      const missingCharacters = (["ryu", "ayane"] as CharacterId[]).filter(
+        (characterId) => nextInitiativeRolls[characterId] === undefined,
+      );
+
+      setInitiativeRolls(nextInitiativeRolls);
+
+      if (missingCharacters.length > 0) {
+        const missingNames = missingCharacters
+          .map((characterId) => characters[characterId].name)
+          .join(" und ");
+
+        setInitiativeStatus(`Noch offen: ${missingNames}.`);
+        setDmMessages((messages) => [
+          ...messages,
+          {
+            id: createId(),
+            sender: "DM",
+            text: `${characters[initiativeCharacterId].name} ist in der Initiative. Bitte würfle noch ${missingNames}.`,
+          },
+        ]);
+        return;
+      }
+
+      const enemyInitiatives = [
+        {
+          id: "shadow-raider-1",
+          name: "Schattenräuber A",
+          kind: "enemy" as const,
+          roll: Math.floor(Math.random() * 20) + 1 + 2,
+        },
+        {
+          id: "shadow-raider-2",
+          name: "Schattenräuber B",
+          kind: "enemy" as const,
+          roll: Math.floor(Math.random() * 20) + 1 + 2,
+        },
+      ];
+      const orderedInitiativeActors = [
+        ...(Object.entries(nextInitiativeRolls) as [CharacterId, number][]).map(
+          ([characterId, total]) => ({
+            id: characterId,
+            name: characters[characterId].name,
+            kind:
+              characterId === selectedCharacterId
+                ? ("player" as const)
+                : ("companion" as const),
+            total,
+            roll: total,
+          }),
+        ),
+        ...enemyInitiatives,
+      ].sort((firstActor, secondActor) => secondActor.roll - firstActor.roll);
+      const visibleInitiativeOrder = orderedInitiativeActors
+        .map((actor) =>
+          actor.kind === "enemy" ? actor.name : `${actor.name} ${actor.total}`,
+        )
+        .join(", ");
+      const combatInitiativeOrder: InitiativeActor[] = orderedInitiativeActors.map(
+        (actor) => ({
+          id: actor.id,
+          name: actor.name,
+          kind: actor.kind,
+          total: "total" in actor ? actor.total : undefined,
+        }),
+      );
+
+      setInitiativeOrder(combatInitiativeOrder);
+      setInitiativeStatus(`Initiative steht: ${visibleInitiativeOrder}.`);
+      addGameLog({
+        title: "Initiative vollständig",
+        detail: `${visibleInitiativeOrder}. Gegner wurden verdeckt vom DM gewürfelt.`,
+      });
+      setDmMessages((messages) => [
+        ...messages,
+        {
+          id: createId(),
+          sender: "DM",
+          text: `Initiative steht: ${visibleInitiativeOrder}. Die Gegnerwürfe bleiben verdeckt, die Reihenfolge ist offen.`,
+        },
+      ]);
+
+      window.setTimeout(() => {
+        if (selectedCharacterId) {
+          persistSaveState(
+            "kampf-runde-eins",
+            selectedCharacterId,
+            "Initiative vollständig",
+          );
+        }
+
+        goToScene("kampf-runde-eins");
+      }, 900);
+      return;
+    }
 
     if (!pendingCheck || !options?.skill) {
       return;
@@ -531,6 +1128,13 @@ export default function Home() {
               success ? "geschafft" : "nicht geschafft"
             }.`;
 
+    if (naturalRoll === 20 && selectedCharacterId) {
+      setInitiativeRollModes((modes) => ({
+        ...modes,
+        [selectedCharacterId]: "advantage",
+      }));
+    }
+
     addGameLog({
       title: "Skillcheck ausgewertet",
       detail: checkDetail,
@@ -539,7 +1143,7 @@ export default function Home() {
     setDmMessages((messages) => [
       ...messages,
       {
-        id: crypto.randomUUID(),
+        id: createId(),
         sender: "DM",
         text: checkDetail,
       },
@@ -555,7 +1159,56 @@ export default function Home() {
     }, 900);
   };
 
-  const sendDmMessage = () => {
+  const runBackendCombatTest = async () => {
+    if (!selectedCharacterId || !activeSheet) {
+      setCombatStatus("Bitte zuerst Ryu oder Ayane auswählen.");
+      return;
+    }
+
+    const action = activeSheet.actions[0];
+    const damageFormula = parseDiceFormula(action.damage);
+
+    if (!damageFormula) {
+      setCombatStatus(`Schadensformel für ${action.name} konnte nicht gelesen werden.`);
+      return;
+    }
+
+    const targetHp = combatTargetHp > 0 ? combatTargetHp : 20;
+    setCombatStatus(
+      `${action.name} gegen Trainingsziel wird vom Backend ausgewertet...`,
+    );
+
+    try {
+      const response = await resolveCombat({
+        character_id: toBackendCharacterId(selectedCharacterId),
+        attack_modifier: action.attack,
+        target_ac: 14,
+        damage_dice_count: damageFormula.diceCount,
+        damage_die_sides: damageFormula.diceType,
+        damage_modifier: damageFormula.modifier,
+        target_current_hp: targetHp,
+      });
+      const events = buildCombatHudEvents(response);
+      const hitText = response.attack.hit ? "Treffer" : "verfehlt";
+      const hpText = response.attack.hit
+        ? `Schaden ${response.damage.total}, Ziel-HP ${response.hp.remaining_hp}.`
+        : "Kein Schaden.";
+
+      setCombatTargetHp(response.attack.hit ? response.hp.remaining_hp : targetHp);
+      setCombatStatus(
+        `${action.name}: ${response.attack.total} gegen AC 14, ${hitText}. ${hpText}`,
+      );
+      applyHudEvents(events);
+    } catch (error) {
+      setCombatStatus(
+        error instanceof Error
+          ? error.message
+          : "Backend-Combat konnte nicht ausgewertet werden.",
+      );
+    }
+  };
+
+  const sendDmMessage = async () => {
     const trimmedInput = dmInput.trim();
 
     if (!trimmedInput) {
@@ -565,18 +1218,59 @@ export default function Home() {
     setDmMessages((messages) => [
       ...messages,
       {
-        id: crypto.randomUUID(),
+        id: createId(),
         sender: "Spieler",
         text: trimmedInput,
       },
-      {
-        id: crypto.randomUUID(),
-        sender: "DM",
-        text: "Notiert. Im nächsten Backend-Schritt wird diese Frage an die AI-DM-Logik weitergegeben. Aktuell ist dies ein Frontend-Platzhalter.",
-      },
     ]);
     setDmInput("");
+
+    try {
+      const response = await narrateWithAiDm({
+        scene_title: currentScene.title,
+        player_choice: trimmedInput,
+        rules_result: {
+          scene: currentScene.id,
+          last_roll: rollResult,
+        },
+        character_state: backendSaveState.main_character,
+        inventory: inventoryState,
+      });
+
+      setDmMessages((messages) => [
+        ...messages,
+        {
+          id: createId(),
+          sender: "DM",
+          text: shouldUseLocalDmAnswer(response.narration)
+            ? buildLocalDmAnswer(trimmedInput)
+            : response.narration,
+        },
+      ]);
+      applyHudEvents(response.hud_events);
+    } catch (error) {
+      setDmMessages((messages) => [
+        ...messages,
+        {
+          id: createId(),
+          sender: "DM",
+          text: "Backend-DM ist lokal noch nicht erreichbar. Starte FastAPI auf Port 8000, dann wird diese Frage an /ai-dm/narrate gesendet.",
+        },
+      ]);
+      addGameLog({
+        title: "AI-DM nicht erreichbar",
+        detail: error instanceof Error ? error.message : "Unbekannter Fehler",
+      });
+    }
   };
+
+  useEffect(() => {
+    void syncInventoryView();
+  }, [inventoryState]);
+
+  useEffect(() => {
+    void syncBackendSave();
+  }, [backendSaveState, currentSceneId, selectedCharacterId]);
 
   useEffect(() => {
     setVisibleWordCount(0);
@@ -841,19 +1535,27 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
                     <HeartPulse className="mb-1 size-4 text-ember-400" />
                     <p className="text-xs text-slate-400">HP</p>
                     <p className="text-sm font-bold">
-                      {activeCharacter.stats.hp} / {activeCharacter.stats.hp}
+                      {activeRuntimeStats?.currentHp} /{" "}
+                      {activeRuntimeStats?.maxHp}
                     </p>
                   </div>
                   <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
                     <ShieldCheck className="mb-1 size-4 text-ember-400" />
                     <p className="text-xs text-slate-400">AC</p>
                     <p className="text-sm font-bold">
-                      {activeCharacter.stats.ac}
+                      {activeRuntimeStats?.ac}
+                    </p>
+                  </div>
+                  <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
+                    <Swords className="mb-1 size-4 text-ember-400" />
+                    <p className="text-xs text-slate-400">Speed</p>
+                    <p className="text-sm font-bold">
+                      {activeCharacter.stats.speed} ft.
                     </p>
                   </div>
                 </div>
@@ -864,6 +1566,7 @@ export default function Home() {
                     rollFormula(
                       `${activeCharacter.name} Initiative`,
                       `1d20+${activeCharacter.stats.initiative}`,
+                      { initiativeCharacterId: activeCharacter.id },
                     )
                   }
                   type="button"
@@ -962,6 +1665,21 @@ export default function Home() {
                   </button>
                   {isActionsExpanded ? (
                   <div className="space-y-2">
+                    <button
+                      className="w-full rounded-md border border-ember-400/50 bg-ember-500/10 px-3 py-2 text-left text-xs transition hover:border-ember-300 hover:bg-ember-500/20"
+                      onClick={runBackendCombatTest}
+                      type="button"
+                    >
+                      <span className="block font-bold text-slate-100">
+                        Backend-Combat testen
+                      </span>
+                      <span className="block text-slate-400">
+                        Trainingsziel AC 14 · HP {combatTargetHp > 0 ? combatTargetHp : 20}
+                      </span>
+                      <span className="mt-1 block text-slate-500">
+                        {combatStatus}
+                      </span>
+                    </button>
                     {activeSheet.actions.map((action) => (
                       <div
                         className="rounded-md border border-white/10 bg-white/[0.05] p-2"
@@ -1000,6 +1718,209 @@ export default function Home() {
                   </div>
                   ) : null}
                 </div>
+
+                <div>
+                  <button
+                    className="mb-2 flex w-full items-center justify-between text-xs uppercase tracking-[0.16em] text-slate-400"
+                    onClick={() =>
+                      setIsInventoryExpanded((isExpanded) => !isExpanded)
+                    }
+                    type="button"
+                  >
+                    Inventory
+                    <ChevronDown
+                      className={`size-3 transition ${
+                        isInventoryExpanded ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                  {isInventoryExpanded ? (
+                    <div className="space-y-2">
+                      <p className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-2 text-xs text-slate-400">
+                        {inventoryStatus}
+                      </p>
+                      {inventoryItems.map((item) => (
+                        <article
+                          className="rounded-md border border-white/10 bg-white/[0.05] p-2"
+                          key={item.item_id}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-bold">{item.name}</p>
+                              <p className="text-xs text-slate-500">
+                                {item.category ?? "item"} · Menge {item.quantity}
+                                {item.equipped ? " · ausgerüstet" : ""}
+                              </p>
+                            </div>
+                          </div>
+                          {item.description ? (
+                            <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                              {getInventoryDescription(item)}
+                            </p>
+                          ) : null}
+                          <div className="mt-2 grid grid-cols-2 gap-1">
+                            {(item.actions ?? []).map((action) => (
+                              <button
+                                className="rounded-md border border-white/10 bg-white/[0.06] px-2 py-1.5 text-xs font-semibold transition hover:border-ember-400/70"
+                                key={action}
+                                onClick={() => handleInventoryAction(item, action)}
+                                type="button"
+                              >
+                                {action}
+                              </button>
+                            ))}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {activeNpc && companionSheet ? (
+              <div className="mt-3 space-y-3 rounded-md border border-white/10 bg-white/[0.03] p-2">
+                <button
+                  className="flex w-full items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-left transition hover:border-ember-400/60"
+                  onClick={() =>
+                    setIsCompanionExpanded((isExpanded) => !isExpanded)
+                  }
+                  type="button"
+                >
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.16em] text-ember-300">
+                      NPC-Begleitung
+                    </p>
+                    <p className="text-sm font-bold">{activeNpc.name}</p>
+                    <p className="text-xs text-slate-400">
+                      Level {activeNpc.level} {activeNpc.className} ·{" "}
+                      {activeNpc.subclassName}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
+                    <span>
+                      HP {companionRuntimeStats?.currentHp} | AC{" "}
+                      {companionRuntimeStats?.ac}
+                    </span>
+                    {isCompanionExpanded ? (
+                      <ChevronDown className="size-4" />
+                    ) : (
+                      <ChevronRight className="size-4" />
+                    )}
+                  </div>
+                </button>
+
+                {isCompanionExpanded ? (
+                  <>
+                    <div className="overflow-hidden rounded-md border border-white/10 bg-black/35">
+                      <div className="flex h-32 items-end justify-center bg-gradient-to-b from-white/5 to-transparent">
+                        <Image
+                          alt={`${activeNpc.name} Begleiterbild`}
+                          className="max-h-32 object-contain drop-shadow-2xl"
+                          height={180}
+                          src={activeNpc.modelImageUrl}
+                          width={140}
+                        />
+                      </div>
+                      <div className="border-t border-white/10 p-2">
+                        <p className="text-sm font-bold">{activeNpc.name}</p>
+                        <p className="text-xs text-slate-400">
+                          Level {activeNpc.level} {activeNpc.className} ·{" "}
+                          {activeNpc.subclassName}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                        <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
+                          <HeartPulse className="mb-1 size-4 text-ember-400" />
+                          <p className="text-xs text-slate-400">HP</p>
+                          <p className="text-sm font-bold">
+                            {companionRuntimeStats?.currentHp} /{" "}
+                            {companionRuntimeStats?.maxHp}
+                          </p>
+                        </div>
+                        <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
+                          <ShieldCheck className="mb-1 size-4 text-ember-400" />
+                          <p className="text-xs text-slate-400">AC</p>
+                          <p className="text-sm font-bold">
+                            {companionRuntimeStats?.ac}
+                          </p>
+                        </div>
+                        <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
+                          <Swords className="mb-1 size-4 text-ember-400" />
+                          <p className="text-xs text-slate-400">Speed</p>
+                          <p className="text-sm font-bold">
+                            {activeNpc.stats.speed} ft.
+                          </p>
+                        </div>
+                    </div>
+
+                    <button
+                      className="w-full rounded-md border border-ember-400/30 bg-ember-500/10 px-3 py-2 text-left transition hover:border-ember-400"
+                      onClick={() =>
+                        rollFormula(
+                          `${activeNpc.name} Initiative`,
+                          `1d20+${activeNpc.stats.initiative}`,
+                          { initiativeCharacterId: activeNpc.id },
+                        )
+                      }
+                      type="button"
+                    >
+                      <span className="block text-xs text-slate-400">
+                        Initiative würfeln
+                      </span>
+                      <span className="text-sm font-bold">
+                        +{activeNpc.stats.initiative}
+                      </span>
+                    </button>
+
+                    <div>
+                      <p className="mb-2 text-xs uppercase tracking-[0.16em] text-slate-400">
+                        Aktionen
+                      </p>
+                      <div className="space-y-2">
+                        {companionSheet.actions.map((action) => (
+                          <div
+                            className="rounded-md border border-white/10 bg-white/[0.05] p-2"
+                            key={action.name}
+                          >
+                            <p className="text-sm font-bold">{action.name}</p>
+                            <p className="text-xs text-slate-500">
+                              {action.note}
+                            </p>
+                            <div className="mt-2 grid grid-cols-2 gap-2">
+                              <button
+                                className="rounded-md border border-white/10 bg-white/[0.06] px-2 py-2 text-xs transition hover:border-ember-400/70"
+                                onClick={() =>
+                                  rollFormula(
+                                    `${activeNpc.name} ${action.name} Angriff`,
+                                    `1d20+${action.attack}`,
+                                  )
+                                }
+                                type="button"
+                              >
+                                Angriff +{action.attack}
+                              </button>
+                              <button
+                                className="rounded-md border border-white/10 bg-white/[0.06] px-2 py-2 text-xs transition hover:border-ember-400/70"
+                                onClick={() =>
+                                  rollFormula(
+                                    `${activeNpc.name} ${action.name} Schaden`,
+                                    action.damage,
+                                  )
+                                }
+                                type="button"
+                              >
+                                Schaden {action.damage}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : null}
               </div>
             ) : null}
 
@@ -1117,6 +2038,38 @@ export default function Home() {
               backgroundImage: `linear-gradient(180deg,rgba(17,24,39,0.22),rgba(3,4,10,0.94)),url('${currentScene.imageUrl}')`,
             }}
           >
+            {isCombatScene && initiativeOrder.length > 0 ? (
+              <div className="absolute left-3 right-3 top-3 z-20 rounded-md border border-white/10 bg-ink-950/85 px-2 py-2 shadow-2xl backdrop-blur">
+                <div className="flex items-center gap-2 overflow-x-auto">
+                  <span className="shrink-0 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-ember-300">
+                    Initiative
+                  </span>
+                  {initiativeOrder.map((actor, index) => (
+                    <div
+                      className={`flex shrink-0 items-center gap-2 rounded-md border px-2 py-1 text-xs font-bold ${
+                        index === 0
+                          ? "border-ember-400 bg-ember-500 text-ink-950"
+                          : actor.kind === "enemy"
+                            ? "border-red-400/40 bg-red-500/10 text-red-100"
+                            : "border-white/10 bg-white/[0.06] text-slate-100"
+                      }`}
+                      key={actor.id}
+                    >
+                      <span>{index + 1}</span>
+                      <span>{actor.name}</span>
+                      {actor.total !== undefined ? (
+                        <span className="text-[0.65rem] opacity-80">
+                          {actor.total}
+                        </span>
+                      ) : (
+                        <span className="text-[0.65rem] opacity-70">DM</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             {isDmPanelOpen ? (
               <aside className="absolute right-3 top-3 z-20 flex max-h-[28rem] w-[min(22rem,calc(100%-1.5rem))] flex-col rounded-md border border-ember-400/30 bg-ink-950/95 shadow-2xl">
                 <div className="flex items-center justify-between border-b border-white/10 p-3">
@@ -1194,6 +2147,21 @@ export default function Home() {
               </div>
             ) : null}
 
+            {isInitiativeScene ? (
+              <div className="absolute left-1/2 top-4 z-30 w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 rounded-md border border-ember-400/60 bg-ink-950/95 p-3 text-center shadow-glow">
+                <p className="text-xs uppercase tracking-[0.18em] text-ember-300">
+                  Initiative erforderlich
+                </p>
+                <p className="mt-1 text-sm font-bold text-slate-100">
+                  {initiativeStatus}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Würfle links im Hauptbogen und im NPC-Bogen jeweils die
+                  Initiative.
+                </p>
+              </div>
+            ) : null}
+
             {isCharacterSelection ? (
               <div className="grid w-full gap-4 lg:grid-cols-2">
                 {(["ryu", "ayane"] as CharacterId[]).map((characterId) => {
@@ -1225,7 +2193,8 @@ export default function Home() {
                         </span>
                         <span className="mt-1 block text-sm text-slate-300">
                           HP {character.stats.hp} | AC {character.stats.ac} |
-                          Initiative +{character.stats.initiative}
+                          Initiative +{character.stats.initiative} | Speed{" "}
+                          {character.stats.speed} ft.
                         </span>
                         <p className="mt-3 text-sm leading-relaxed text-slate-300">
                           {character.backstory}
@@ -1465,6 +2434,24 @@ export default function Home() {
           <p className="text-xs text-slate-400">
             {rollResult.rolls.join(" / ")} + Mod {rollResult.modifier}
           </p>
+        ) : null}
+
+        {hudEvents.length > 0 ? (
+          <div className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-2">
+            <p className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-ember-300">
+              Backend-HUD
+            </p>
+            <div className="mt-1 space-y-1">
+              {hudEvents.slice(0, 3).map((event, index) => (
+                <p
+                  className="text-xs leading-snug text-slate-300"
+                  key={`${event.type}-${event.label ?? "event"}-${index}`}
+                >
+                  {formatHudEvent(event)}
+                </p>
+              ))}
+            </div>
+          </div>
         ) : null}
           </div>
         ) : null}
