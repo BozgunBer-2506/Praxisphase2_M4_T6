@@ -28,3 +28,13 @@ class Scene(Base):
     title = Column(String, nullable=False)
     narrative = Column(String, nullable=False)
     choices = Column(JSON, nullable=False)
+
+
+class SaveGame(Base):
+    __tablename__ = "save_games"
+
+    id = Column(Integer, primary_key=True)
+    slot_name = Column(String, nullable=False, unique=True)
+    character_id = Column(String, nullable=False)
+    scene_number = Column(Integer, nullable=False)
+    state = Column(JSON, nullable=False)
