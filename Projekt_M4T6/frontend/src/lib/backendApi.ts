@@ -47,6 +47,43 @@ export type AiDmNarrationResponse = {
   state_locked: boolean;
 };
 
+export type CombatResolveRequest = {
+  character_id: string;
+  attack_modifier: number;
+  target_ac: number;
+  damage_dice_count: number;
+  damage_die_sides: number;
+  damage_modifier?: number;
+  target_current_hp: number;
+};
+
+export type CombatResolveResponse = {
+  attack: {
+    roll: number;
+    modifier: number;
+    total: number;
+    nat20: boolean;
+    nat1: boolean;
+    target_ac: number;
+    hit: boolean;
+    critical: boolean;
+  };
+  damage: {
+    dice_count: number;
+    die_sides: number;
+    modifier: number;
+    critical: boolean;
+    rolls: number[];
+    total: number;
+  };
+  hp: {
+    previous_hp: number;
+    damage: number;
+    remaining_hp: number;
+    defeated: boolean;
+  };
+};
+
 type RequestOptions = {
   method?: "GET" | "POST" | "DELETE";
   body?: unknown;
@@ -125,5 +162,12 @@ export async function narrateWithAiDm(payload: {
       inventory: [],
       ...payload,
     },
+  });
+}
+
+export async function resolveCombat(payload: CombatResolveRequest) {
+  return request<CombatResolveResponse>("/combat/resolve", {
+    method: "POST",
+    body: payload,
   });
 }

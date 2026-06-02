@@ -29,6 +29,7 @@ import {
   scenes,
 } from "@/data/scenes";
 import {
+  type CombatResolveResponse,
   type HudEvent,
   type InventoryAction,
   type InventoryStateItem,
@@ -37,6 +38,7 @@ import {
   createOrUpdateSave,
   getInventoryView,
   narrateWithAiDm,
+  resolveCombat,
   runSaveInventoryAction,
 } from "@/lib/backendApi";
 
@@ -55,6 +57,48 @@ const createId = () =>
 
 const toBackendCharacterId = (characterId: CharacterId) =>
   characterId === "ryu" ? "ayane" : "johan";
+
+const parseDiceFormula = (formula: string) => {
+  const normalizedFormula = formula.replace(/\s/g, "");
+  const match = normalizedFormula.match(/^(\d*)d(\d+)([+-]\d+)?$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    diceCount: Number(match[1] || "1"),
+    diceType: Number(match[2]),
+    modifier: Number(match[3] || "0"),
+  };
+};
+
+const buildCombatHudEvents = (response: CombatResolveResponse): HudEvent[] => {
+  const events: HudEvent[] = [
+    {
+      type: "attack_roll",
+      label: "Angriff",
+      payload: response.attack,
+    },
+  ];
+
+  if (response.attack.hit) {
+    events.push(
+      {
+        type: "damage",
+        label: "Schaden",
+        payload: response.damage,
+      },
+      {
+        type: "hp_change",
+        label: "Ziel-HP",
+        payload: response.hp,
+      },
+    );
+  }
+
+  return events;
+};
 
 const characterRuleStats: Record<CharacterId, { dexModifier: number }> = {
   ryu: { dexModifier: 2 },
@@ -291,6 +335,10 @@ export default function Home() {
   const [inventoryStatus, setInventoryStatus] = useState(
     "Inventory bereit, Backend-Abgleich ausstehend.",
   );
+  const [combatTargetHp, setCombatTargetHp] = useState(20);
+  const [combatStatus, setCombatStatus] = useState(
+    "Trainingsziel bereit: AC 14, HP 20.",
+  );
   const [runtimeStats, setRuntimeStats] = useState<Record<CharacterId, RuntimeStats>>(
     () => ({
       ryu: {
@@ -444,6 +492,39 @@ export default function Home() {
       return `${event.item_id ?? "Item"} abgelegt`;
     }
 
+    if (
+      event.type === "attack_roll" &&
+      typeof payload.roll === "number" &&
+      typeof payload.modifier === "number" &&
+      typeof payload.total === "number" &&
+      typeof payload.target_ac === "number"
+    ) {
+      const hitText = payload.hit ? "Treffer" : "Verfehlt";
+      const criticalText = payload.critical ? " · Kritisch" : "";
+
+      return `Angriff: d20 ${payload.roll} + Mod ${payload.modifier} = ${payload.total} gegen AC ${payload.target_ac} · ${hitText}${criticalText}`;
+    }
+
+    if (
+      event.type === "damage" &&
+      typeof payload.dice_count === "number" &&
+      typeof payload.die_sides === "number" &&
+      typeof payload.modifier === "number" &&
+      typeof payload.total === "number" &&
+      Array.isArray(payload.rolls)
+    ) {
+      return `Schaden: ${payload.dice_count}d${payload.die_sides} + ${payload.modifier} = ${payload.total} (Würfe ${payload.rolls.join(" / ")})`;
+    }
+
+    if (
+      event.type === "hp_change" &&
+      typeof payload.previous_hp === "number" &&
+      typeof payload.damage === "number" &&
+      typeof payload.remaining_hp === "number"
+    ) {
+      return `Ziel-HP: ${payload.previous_hp} - ${payload.damage} = ${payload.remaining_hp}`;
+    }
+
     const total = payload.total ?? payload.remaining_hp ?? payload.hit;
 
     return `${event.label ?? event.type}${total !== undefined ? `: ${String(total)}` : ""}`;
@@ -460,7 +541,9 @@ export default function Home() {
       detail: events.map(formatHudEvent).join(" | "),
     });
 
-    const visibleEvent = events.find((event) => {
+    const visibleEvent = events.find((event) => event.type === "damage") ??
+      events.find((event) => event.type === "hp_change") ??
+      events.find((event) => {
       const payload = event.payload ?? {};
       const healing = payload.healing;
 
@@ -494,6 +577,20 @@ export default function Home() {
       typeof healing.modifier === "number"
         ? healing.modifier
         : null;
+    const payloadRolls = Array.isArray(payload.rolls)
+      ? payload.rolls.filter((roll): roll is number => typeof roll === "number")
+      : null;
+    const attackRolls =
+      typeof payload.roll === "number" ? [payload.roll] : null;
+    const eventRolls = healingRolls ?? payloadRolls ?? attackRolls;
+    const eventModifier =
+      typeof payload.modifier === "number" ? payload.modifier : healingModifier;
+    const eventDiceType =
+      typeof payload.die_sides === "number"
+        ? payload.die_sides
+        : eventRolls === healingRolls
+          ? 4
+          : 20;
     const total =
       typeof payload.total === "number"
         ? payload.total
@@ -507,10 +604,10 @@ export default function Home() {
         : 0;
 
     setRollResult({
-      diceType: healingRolls ? 4 : 20,
-      rolls: healingRolls ?? [total],
+      diceType: eventDiceType,
+      rolls: eventRolls ?? [total],
       selectedRoll: total,
-      modifier: healingModifier ?? 0,
+      modifier: eventModifier ?? 0,
       total,
       mode: "normal",
       label:
@@ -798,16 +895,17 @@ export default function Home() {
     formula: string,
     options?: { skill?: string },
   ) => {
-    const normalizedFormula = formula.replace(/\s/g, "");
-    const match = normalizedFormula.match(/^(\d*)d(\d+)([+-]\d+)?$/i);
+    const parsedFormula = parseDiceFormula(formula);
 
-    if (!match) {
+    if (!parsedFormula) {
       return;
     }
 
-    const diceCount = Number(match[1] || "1");
-    const formulaDiceType = Number(match[2]);
-    const modifier = Number(match[3] || "0");
+    const {
+      diceCount,
+      diceType: formulaDiceType,
+      modifier,
+    } = parsedFormula;
     const rolls = Array.from({ length: diceCount }, () =>
       Math.floor(Math.random() * formulaDiceType) + 1,
     );
@@ -885,6 +983,55 @@ export default function Home() {
 
       goToScene(targetSceneId);
     }, 900);
+  };
+
+  const runBackendCombatTest = async () => {
+    if (!selectedCharacterId || !activeSheet) {
+      setCombatStatus("Bitte zuerst Ryu oder Ayane auswählen.");
+      return;
+    }
+
+    const action = activeSheet.actions[0];
+    const damageFormula = parseDiceFormula(action.damage);
+
+    if (!damageFormula) {
+      setCombatStatus(`Schadensformel für ${action.name} konnte nicht gelesen werden.`);
+      return;
+    }
+
+    const targetHp = combatTargetHp > 0 ? combatTargetHp : 20;
+    setCombatStatus(
+      `${action.name} gegen Trainingsziel wird vom Backend ausgewertet...`,
+    );
+
+    try {
+      const response = await resolveCombat({
+        character_id: toBackendCharacterId(selectedCharacterId),
+        attack_modifier: action.attack,
+        target_ac: 14,
+        damage_dice_count: damageFormula.diceCount,
+        damage_die_sides: damageFormula.diceType,
+        damage_modifier: damageFormula.modifier,
+        target_current_hp: targetHp,
+      });
+      const events = buildCombatHudEvents(response);
+      const hitText = response.attack.hit ? "Treffer" : "verfehlt";
+      const hpText = response.attack.hit
+        ? `Schaden ${response.damage.total}, Ziel-HP ${response.hp.remaining_hp}.`
+        : "Kein Schaden.";
+
+      setCombatTargetHp(response.attack.hit ? response.hp.remaining_hp : targetHp);
+      setCombatStatus(
+        `${action.name}: ${response.attack.total} gegen AC 14, ${hitText}. ${hpText}`,
+      );
+      applyHudEvents(events);
+    } catch (error) {
+      setCombatStatus(
+        error instanceof Error
+          ? error.message
+          : "Backend-Combat konnte nicht ausgewertet werden.",
+      );
+    }
   };
 
   const sendDmMessage = async () => {
@@ -1336,6 +1483,21 @@ export default function Home() {
                   </button>
                   {isActionsExpanded ? (
                   <div className="space-y-2">
+                    <button
+                      className="w-full rounded-md border border-ember-400/50 bg-ember-500/10 px-3 py-2 text-left text-xs transition hover:border-ember-300 hover:bg-ember-500/20"
+                      onClick={runBackendCombatTest}
+                      type="button"
+                    >
+                      <span className="block font-bold text-slate-100">
+                        Backend-Combat testen
+                      </span>
+                      <span className="block text-slate-400">
+                        Trainingsziel AC 14 · HP {combatTargetHp > 0 ? combatTargetHp : 20}
+                      </span>
+                      <span className="mt-1 block text-slate-500">
+                        {combatStatus}
+                      </span>
+                    </button>
                     {activeSheet.actions.map((action) => (
                       <div
                         className="rounded-md border border-white/10 bg-white/[0.05] p-2"
