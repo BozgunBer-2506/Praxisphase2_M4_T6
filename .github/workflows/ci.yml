@@ -87,6 +87,7 @@ jobs:
           ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no ubuntu@$ip "echo 'DATABASE_URL=postgresql://dnd_user:${{ secrets.DB_PASSWORD }}@$rds:5432/dnd_db' > /home/ubuntu/.env"
           scp -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no -r backend ubuntu@$ip:/home/ubuntu/
           scp -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no docker-compose.yml ubuntu@$ip:/home/ubuntu/docker-compose.yml
+          ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no ubuntu@$ip "sudo docker system prune -af 2>/dev/null || true"
           ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no ubuntu@$ip "sudo apt-get install -y awscli 2>/dev/null || true"
           ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no ubuntu@$ip "aws ecr get-login-password --region eu-central-1 | sudo docker login --username AWS --password-stdin 577817260098.dkr.ecr.eu-central-1.amazonaws.com"
           ssh -i ~/.ssh/falkenwacht_key -o StrictHostKeyChecking=no ubuntu@$ip "cd /home/ubuntu && sudo DOCKER_BUILDKIT=0 docker compose up -d --build db backend && sudo docker compose pull frontend && sudo docker compose up -d frontend"
