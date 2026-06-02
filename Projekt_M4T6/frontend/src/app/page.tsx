@@ -272,6 +272,13 @@ type PendingCheck = {
   checks: SkillCheck[];
 };
 
+type InitiativeActor = {
+  id: string;
+  name: string;
+  kind: "player" | "companion" | "enemy";
+  total?: number;
+};
+
 const findScene = (sceneId: string) =>
   scenes.find((scene) => scene.id === sceneId) ?? scenes[0];
 
@@ -329,6 +336,7 @@ export default function Home() {
   const [isSkillsExpanded, setIsSkillsExpanded] = useState(true);
   const [isActionsExpanded, setIsActionsExpanded] = useState(true);
   const [isInventoryExpanded, setIsInventoryExpanded] = useState(true);
+  const [isCompanionExpanded, setIsCompanionExpanded] = useState(false);
   const [inventoryState, setInventoryState] =
     useState<InventoryStateItem[]>(initialInventory);
   const [inventoryItems, setInventoryItems] = useState<InventoryViewItem[]>([]);
@@ -338,6 +346,16 @@ export default function Home() {
   const [combatTargetHp, setCombatTargetHp] = useState(20);
   const [combatStatus, setCombatStatus] = useState(
     "Trainingsziel bereit: AC 14, HP 20.",
+  );
+  const [initiativeRolls, setInitiativeRolls] = useState<
+    Partial<Record<CharacterId, number>>
+  >({});
+  const [initiativeRollModes, setInitiativeRollModes] = useState<
+    Partial<Record<CharacterId, RollMode>>
+  >({});
+  const [initiativeOrder, setInitiativeOrder] = useState<InitiativeActor[]>([]);
+  const [initiativeStatus, setInitiativeStatus] = useState(
+    "Initiative offen: Ryu und Ayane müssen würfeln.",
   );
   const [runtimeStats, setRuntimeStats] = useState<Record<CharacterId, RuntimeStats>>(
     () => ({
@@ -423,6 +441,12 @@ export default function Home() {
   const activeRuntimeStats = selectedCharacterId
     ? runtimeStats[selectedCharacterId]
     : null;
+  const companionSheet = activeNpc ? characterSheets[activeNpc.id] : null;
+  const companionRuntimeStats = activeNpc ? runtimeStats[activeNpc.id] : null;
+  const isInitiativeScene = currentScene.id === "kampf-initiative-start";
+  const isCombatScene =
+    currentScene.id.startsWith("kampf-") ||
+    currentScene.id === "hinterhalt-handelsroute";
   const actorName = activeCharacter?.name ?? "Der Charakter";
   const backendSaveState = useMemo<SaveGameState>(() => {
     const mainCharacter = activeCharacter ?? characters.ryu;
@@ -799,6 +823,22 @@ export default function Home() {
   };
 
   const goToScene = (sceneId: string) => {
+    if (sceneId === "kampf-initiative-start" && currentSceneId !== sceneId) {
+      const advantageNames = (["ryu", "ayane"] as CharacterId[])
+        .filter((characterId) => initiativeRollModes[characterId] === "advantage")
+        .map((characterId) => characters[characterId].name);
+
+      setInitiativeRolls({});
+      setInitiativeOrder([]);
+      setInitiativeStatus(
+        advantageNames.length > 0
+          ? `Initiative offen: Ryu und Ayane müssen würfeln. ${advantageNames.join(
+              " und ",
+            )} würfelt mit Vorteil.`
+          : "Initiative offen: Ryu und Ayane müssen würfeln.",
+      );
+    }
+
     setCurrentSceneId(sceneId);
     setDialogueLineIndex(0);
     setVisibleWordCount(0);
@@ -893,7 +933,11 @@ export default function Home() {
   const rollFormula = (
     label: string,
     formula: string,
-    options?: { skill?: string },
+    options?: {
+      skill?: string;
+      initiativeCharacterId?: CharacterId;
+      rollMode?: RollMode;
+    },
   ) => {
     const parsedFormula = parseDiceFormula(formula);
 
@@ -906,17 +950,30 @@ export default function Home() {
       diceType: formulaDiceType,
       modifier,
     } = parsedFormula;
-    const rolls = Array.from({ length: diceCount }, () =>
-      Math.floor(Math.random() * formulaDiceType) + 1,
-    );
-    const selectedRoll = rolls.reduce((sum, roll) => sum + roll, 0);
+    const rollOnce = () => Math.floor(Math.random() * formulaDiceType) + 1;
+    const effectiveRollMode =
+      options?.initiativeCharacterId && formulaDiceType === 20
+        ? initiativeRollModes[options.initiativeCharacterId] ?? "normal"
+        : options?.rollMode ?? "normal";
+    const rolls =
+      diceCount === 1 && formulaDiceType === 20 && effectiveRollMode !== "normal"
+        ? [rollOnce(), rollOnce()]
+        : Array.from({ length: diceCount }, rollOnce);
+    const selectedRoll =
+      diceCount === 1 && formulaDiceType === 20 && effectiveRollMode === "advantage"
+        ? Math.max(...rolls)
+        : diceCount === 1 &&
+            formulaDiceType === 20 &&
+            effectiveRollMode === "disadvantage"
+          ? Math.min(...rolls)
+          : rolls.reduce((sum, roll) => sum + roll, 0);
     const result = {
       diceType: formulaDiceType,
       rolls,
       selectedRoll,
       modifier,
       total: selectedRoll + modifier,
-      mode: "normal" as RollMode,
+      mode: effectiveRollMode,
       label,
     };
 
@@ -924,9 +981,119 @@ export default function Home() {
     setRollAnimationKey((currentKey) => currentKey + 1);
     addGameLog({
       title: label,
-      detail: `Wurf ${rolls.join(" + ")} + Mod ${modifier} · Ergebnis ${result.total}`,
+      detail:
+        rolls.length > 1
+          ? `Würfe ${rolls.join(" / ")} · ${
+              effectiveRollMode === "advantage" ? "Vorteil" : "Nachteil"
+            } · Mod ${modifier} · Ergebnis ${result.total}`
+          : `Wurf ${rolls.join(" + ")} + Mod ${modifier} · Ergebnis ${result.total}`,
       total: result.total,
     });
+
+    if (options?.initiativeCharacterId && isInitiativeScene) {
+      const initiativeCharacterId = options.initiativeCharacterId;
+      const nextInitiativeRolls = {
+        ...initiativeRolls,
+        [initiativeCharacterId]: result.total,
+      };
+      setInitiativeRollModes((modes) => ({
+        ...modes,
+        [initiativeCharacterId]: "normal",
+      }));
+      const missingCharacters = (["ryu", "ayane"] as CharacterId[]).filter(
+        (characterId) => nextInitiativeRolls[characterId] === undefined,
+      );
+
+      setInitiativeRolls(nextInitiativeRolls);
+
+      if (missingCharacters.length > 0) {
+        const missingNames = missingCharacters
+          .map((characterId) => characters[characterId].name)
+          .join(" und ");
+
+        setInitiativeStatus(`Noch offen: ${missingNames}.`);
+        setDmMessages((messages) => [
+          ...messages,
+          {
+            id: createId(),
+            sender: "DM",
+            text: `${characters[initiativeCharacterId].name} ist in der Initiative. Bitte würfle noch ${missingNames}.`,
+          },
+        ]);
+        return;
+      }
+
+      const enemyInitiatives = [
+        {
+          id: "shadow-raider-1",
+          name: "Schattenräuber A",
+          kind: "enemy" as const,
+          roll: Math.floor(Math.random() * 20) + 1 + 2,
+        },
+        {
+          id: "shadow-raider-2",
+          name: "Schattenräuber B",
+          kind: "enemy" as const,
+          roll: Math.floor(Math.random() * 20) + 1 + 2,
+        },
+      ];
+      const orderedInitiativeActors = [
+        ...(Object.entries(nextInitiativeRolls) as [CharacterId, number][]).map(
+          ([characterId, total]) => ({
+            id: characterId,
+            name: characters[characterId].name,
+            kind:
+              characterId === selectedCharacterId
+                ? ("player" as const)
+                : ("companion" as const),
+            total,
+            roll: total,
+          }),
+        ),
+        ...enemyInitiatives,
+      ].sort((firstActor, secondActor) => secondActor.roll - firstActor.roll);
+      const visibleInitiativeOrder = orderedInitiativeActors
+        .map((actor) =>
+          actor.kind === "enemy" ? actor.name : `${actor.name} ${actor.total}`,
+        )
+        .join(", ");
+      const combatInitiativeOrder: InitiativeActor[] = orderedInitiativeActors.map(
+        (actor) => ({
+          id: actor.id,
+          name: actor.name,
+          kind: actor.kind,
+          total: "total" in actor ? actor.total : undefined,
+        }),
+      );
+
+      setInitiativeOrder(combatInitiativeOrder);
+      setInitiativeStatus(`Initiative steht: ${visibleInitiativeOrder}.`);
+      addGameLog({
+        title: "Initiative vollständig",
+        detail: `${visibleInitiativeOrder}. Gegner wurden verdeckt vom DM gewürfelt.`,
+      });
+      setDmMessages((messages) => [
+        ...messages,
+        {
+          id: createId(),
+          sender: "DM",
+          text: `Initiative steht: ${visibleInitiativeOrder}. Die Gegnerwürfe bleiben verdeckt, die Reihenfolge ist offen.`,
+        },
+      ]);
+
+      window.setTimeout(() => {
+        if (selectedCharacterId) {
+          persistSaveState(
+            "kampf-runde-eins",
+            selectedCharacterId,
+            "Initiative vollständig",
+          );
+        }
+
+        goToScene("kampf-runde-eins");
+      }, 900);
+      return;
+    }
 
     if (!pendingCheck || !options?.skill) {
       return;
@@ -960,6 +1127,13 @@ export default function Home() {
           : `${options.skill} ${result.total} gegen DC ${matchingCheck.dc}: ${
               success ? "geschafft" : "nicht geschafft"
             }.`;
+
+    if (naturalRoll === 20 && selectedCharacterId) {
+      setInitiativeRollModes((modes) => ({
+        ...modes,
+        [selectedCharacterId]: "advantage",
+      }));
+    }
 
     addGameLog({
       title: "Skillcheck ausgewertet",
@@ -1361,7 +1535,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
                     <HeartPulse className="mb-1 size-4 text-ember-400" />
                     <p className="text-xs text-slate-400">HP</p>
@@ -1377,6 +1551,13 @@ export default function Home() {
                       {activeRuntimeStats?.ac}
                     </p>
                   </div>
+                  <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
+                    <Swords className="mb-1 size-4 text-ember-400" />
+                    <p className="text-xs text-slate-400">Speed</p>
+                    <p className="text-sm font-bold">
+                      {activeCharacter.stats.speed} ft.
+                    </p>
+                  </div>
                 </div>
 
                 <button
@@ -1385,6 +1566,7 @@ export default function Home() {
                     rollFormula(
                       `${activeCharacter.name} Initiative`,
                       `1d20+${activeCharacter.stats.initiative}`,
+                      { initiativeCharacterId: activeCharacter.id },
                     )
                   }
                   type="button"
@@ -1596,6 +1778,152 @@ export default function Home() {
               </div>
             ) : null}
 
+            {activeNpc && companionSheet ? (
+              <div className="mt-3 space-y-3 rounded-md border border-white/10 bg-white/[0.03] p-2">
+                <button
+                  className="flex w-full items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-left transition hover:border-ember-400/60"
+                  onClick={() =>
+                    setIsCompanionExpanded((isExpanded) => !isExpanded)
+                  }
+                  type="button"
+                >
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.16em] text-ember-300">
+                      NPC-Begleitung
+                    </p>
+                    <p className="text-sm font-bold">{activeNpc.name}</p>
+                    <p className="text-xs text-slate-400">
+                      Level {activeNpc.level} {activeNpc.className} ·{" "}
+                      {activeNpc.subclassName}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
+                    <span>
+                      HP {companionRuntimeStats?.currentHp} | AC{" "}
+                      {companionRuntimeStats?.ac}
+                    </span>
+                    {isCompanionExpanded ? (
+                      <ChevronDown className="size-4" />
+                    ) : (
+                      <ChevronRight className="size-4" />
+                    )}
+                  </div>
+                </button>
+
+                {isCompanionExpanded ? (
+                  <>
+                    <div className="overflow-hidden rounded-md border border-white/10 bg-black/35">
+                      <div className="flex h-32 items-end justify-center bg-gradient-to-b from-white/5 to-transparent">
+                        <Image
+                          alt={`${activeNpc.name} Begleiterbild`}
+                          className="max-h-32 object-contain drop-shadow-2xl"
+                          height={180}
+                          src={activeNpc.modelImageUrl}
+                          width={140}
+                        />
+                      </div>
+                      <div className="border-t border-white/10 p-2">
+                        <p className="text-sm font-bold">{activeNpc.name}</p>
+                        <p className="text-xs text-slate-400">
+                          Level {activeNpc.level} {activeNpc.className} ·{" "}
+                          {activeNpc.subclassName}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                        <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
+                          <HeartPulse className="mb-1 size-4 text-ember-400" />
+                          <p className="text-xs text-slate-400">HP</p>
+                          <p className="text-sm font-bold">
+                            {companionRuntimeStats?.currentHp} /{" "}
+                            {companionRuntimeStats?.maxHp}
+                          </p>
+                        </div>
+                        <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
+                          <ShieldCheck className="mb-1 size-4 text-ember-400" />
+                          <p className="text-xs text-slate-400">AC</p>
+                          <p className="text-sm font-bold">
+                            {companionRuntimeStats?.ac}
+                          </p>
+                        </div>
+                        <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
+                          <Swords className="mb-1 size-4 text-ember-400" />
+                          <p className="text-xs text-slate-400">Speed</p>
+                          <p className="text-sm font-bold">
+                            {activeNpc.stats.speed} ft.
+                          </p>
+                        </div>
+                    </div>
+
+                    <button
+                      className="w-full rounded-md border border-ember-400/30 bg-ember-500/10 px-3 py-2 text-left transition hover:border-ember-400"
+                      onClick={() =>
+                        rollFormula(
+                          `${activeNpc.name} Initiative`,
+                          `1d20+${activeNpc.stats.initiative}`,
+                          { initiativeCharacterId: activeNpc.id },
+                        )
+                      }
+                      type="button"
+                    >
+                      <span className="block text-xs text-slate-400">
+                        Initiative würfeln
+                      </span>
+                      <span className="text-sm font-bold">
+                        +{activeNpc.stats.initiative}
+                      </span>
+                    </button>
+
+                    <div>
+                      <p className="mb-2 text-xs uppercase tracking-[0.16em] text-slate-400">
+                        Aktionen
+                      </p>
+                      <div className="space-y-2">
+                        {companionSheet.actions.map((action) => (
+                          <div
+                            className="rounded-md border border-white/10 bg-white/[0.05] p-2"
+                            key={action.name}
+                          >
+                            <p className="text-sm font-bold">{action.name}</p>
+                            <p className="text-xs text-slate-500">
+                              {action.note}
+                            </p>
+                            <div className="mt-2 grid grid-cols-2 gap-2">
+                              <button
+                                className="rounded-md border border-white/10 bg-white/[0.06] px-2 py-2 text-xs transition hover:border-ember-400/70"
+                                onClick={() =>
+                                  rollFormula(
+                                    `${activeNpc.name} ${action.name} Angriff`,
+                                    `1d20+${action.attack}`,
+                                  )
+                                }
+                                type="button"
+                              >
+                                Angriff +{action.attack}
+                              </button>
+                              <button
+                                className="rounded-md border border-white/10 bg-white/[0.06] px-2 py-2 text-xs transition hover:border-ember-400/70"
+                                onClick={() =>
+                                  rollFormula(
+                                    `${activeNpc.name} ${action.name} Schaden`,
+                                    action.damage,
+                                  )
+                                }
+                                type="button"
+                              >
+                                Schaden {action.damage}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+
             <button
               aria-label="Würfelsystem öffnen"
               className="hidden"
@@ -1710,6 +2038,38 @@ export default function Home() {
               backgroundImage: `linear-gradient(180deg,rgba(17,24,39,0.22),rgba(3,4,10,0.94)),url('${currentScene.imageUrl}')`,
             }}
           >
+            {isCombatScene && initiativeOrder.length > 0 ? (
+              <div className="absolute left-3 right-3 top-3 z-20 rounded-md border border-white/10 bg-ink-950/85 px-2 py-2 shadow-2xl backdrop-blur">
+                <div className="flex items-center gap-2 overflow-x-auto">
+                  <span className="shrink-0 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-ember-300">
+                    Initiative
+                  </span>
+                  {initiativeOrder.map((actor, index) => (
+                    <div
+                      className={`flex shrink-0 items-center gap-2 rounded-md border px-2 py-1 text-xs font-bold ${
+                        index === 0
+                          ? "border-ember-400 bg-ember-500 text-ink-950"
+                          : actor.kind === "enemy"
+                            ? "border-red-400/40 bg-red-500/10 text-red-100"
+                            : "border-white/10 bg-white/[0.06] text-slate-100"
+                      }`}
+                      key={actor.id}
+                    >
+                      <span>{index + 1}</span>
+                      <span>{actor.name}</span>
+                      {actor.total !== undefined ? (
+                        <span className="text-[0.65rem] opacity-80">
+                          {actor.total}
+                        </span>
+                      ) : (
+                        <span className="text-[0.65rem] opacity-70">DM</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             {isDmPanelOpen ? (
               <aside className="absolute right-3 top-3 z-20 flex max-h-[28rem] w-[min(22rem,calc(100%-1.5rem))] flex-col rounded-md border border-ember-400/30 bg-ink-950/95 shadow-2xl">
                 <div className="flex items-center justify-between border-b border-white/10 p-3">
@@ -1787,6 +2147,21 @@ export default function Home() {
               </div>
             ) : null}
 
+            {isInitiativeScene ? (
+              <div className="absolute left-1/2 top-4 z-30 w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 rounded-md border border-ember-400/60 bg-ink-950/95 p-3 text-center shadow-glow">
+                <p className="text-xs uppercase tracking-[0.18em] text-ember-300">
+                  Initiative erforderlich
+                </p>
+                <p className="mt-1 text-sm font-bold text-slate-100">
+                  {initiativeStatus}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Würfle links im Hauptbogen und im NPC-Bogen jeweils die
+                  Initiative.
+                </p>
+              </div>
+            ) : null}
+
             {isCharacterSelection ? (
               <div className="grid w-full gap-4 lg:grid-cols-2">
                 {(["ryu", "ayane"] as CharacterId[]).map((characterId) => {
@@ -1818,7 +2193,8 @@ export default function Home() {
                         </span>
                         <span className="mt-1 block text-sm text-slate-300">
                           HP {character.stats.hp} | AC {character.stats.ac} |
-                          Initiative +{character.stats.initiative}
+                          Initiative +{character.stats.initiative} | Speed{" "}
+                          {character.stats.speed} ft.
                         </span>
                         <p className="mt-3 text-sm leading-relaxed text-slate-300">
                           {character.backstory}

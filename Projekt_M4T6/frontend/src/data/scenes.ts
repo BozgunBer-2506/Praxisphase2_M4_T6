@@ -21,6 +21,7 @@ export type Character = {
     hp: number;
     ac: number;
     initiative: number;
+    speed: number;
   };
 };
 
@@ -71,6 +72,7 @@ export const characters: Record<CharacterId, Character> = {
       hp: 31,
       ac: 15,
       initiative: 5,
+      speed: 30,
     },
   },
   ayane: {
@@ -90,6 +92,7 @@ export const characters: Record<CharacterId, Character> = {
       hp: 24,
       ac: 16,
       initiative: 3,
+      speed: 30,
     },
   },
 };
@@ -524,7 +527,7 @@ export const scenes: Scene[] = [
     location: "Falkenwacht - Innere Handelsroute",
     chapter: "Session 1",
     speaker: "DM",
-    imageUrl: "/scenes/prolog-stolen-egg.png",
+    imageUrl: "/scenes/inner-trade-route-rain.png",
     narration:
       "Die Handelsroute liegt unter kaltem Regen. Wagenspuren kreuzen sich, Laternen flackern im Wind, und irgendwo zwischen Marktständen und Wachposten endet Varians sichere Information.",
     dialogueLines: [
@@ -581,7 +584,7 @@ export const scenes: Scene[] = [
     location: "Falkenwacht - Innere Handelsroute",
     chapter: "Session 1",
     speaker: "DM",
-    imageUrl: "/scenes/prolog-stolen-egg.png",
+    imageUrl: "/scenes/inner-trade-route-rain.png",
     narration:
       "Eine Spur löst sich aus dem Chaos. Jemand hat versucht, die Route zu verschleiern, aber nicht gut genug.",
     dialogueLines: [
@@ -600,7 +603,7 @@ export const scenes: Scene[] = [
         label: "Speicherstand sichern und Spur markieren",
         description:
           "Du hältst die neue Spur fest. Der nächste Abschnitt führt Richtung Unterstadt.",
-        nextSceneId: "handelsroute-spur-erkannt",
+        nextSceneId: "hinterhalt-handelsroute",
       },
     ],
   },
@@ -610,7 +613,7 @@ export const scenes: Scene[] = [
     location: "Falkenwacht - Innere Handelsroute",
     chapter: "Session 1",
     speaker: "DM",
-    imageUrl: "/scenes/prolog-stolen-egg.png",
+    imageUrl: "/scenes/inner-trade-route-rain.png",
     narration:
       "Der Regen nimmt euch mehr Hinweise, als er offenlegt. Ihr findet genug, um weiterzugehen, aber nicht genug, um sicher zu sein.",
     dialogueLines: [
@@ -629,7 +632,7 @@ export const scenes: Scene[] = [
         label: "Trotz unsicherer Spur Richtung Unterstadt gehen",
         description:
           "Du gehst weiter, auch wenn die nächste Szene gefährlicher beginnen könnte.",
-        nextSceneId: "handelsroute-spur-verloren",
+        nextSceneId: "hinterhalt-handelsroute",
       },
     ],
   },
@@ -639,7 +642,7 @@ export const scenes: Scene[] = [
     location: "Falkenwacht - Innere Handelsroute",
     chapter: "Session 1",
     speaker: "DM",
-    imageUrl: "/scenes/prolog-stolen-egg.png",
+    imageUrl: "/scenes/inner-trade-route-rain.png",
     narration:
       "Für einen Moment ergibt alles Sinn: die Radspur, die Wachmarke, die Lüge des Zeugen. Die Fährte ist klar.",
     dialogueLines: [
@@ -658,7 +661,7 @@ export const scenes: Scene[] = [
         label: "Die Fährte sichern",
         description:
           "Du markierst die saubere Spur und bereitest den nächsten Abschnitt vor.",
-        nextSceneId: "handelsroute-spur-erkannt",
+        nextSceneId: "hinterhalt-handelsroute",
       },
     ],
   },
@@ -668,7 +671,7 @@ export const scenes: Scene[] = [
     location: "Falkenwacht - Innere Handelsroute",
     chapter: "Session 1",
     speaker: "DM",
-    imageUrl: "/scenes/prolog-stolen-egg.png",
+    imageUrl: "/scenes/inner-trade-route-rain.png",
     narration:
       "Die erste Spur wirkt zu klar. Erst zu spät merkst du, dass jemand wollte, dass du genau dorthin schaust.",
     dialogueLines: [
@@ -687,7 +690,586 @@ export const scenes: Scene[] = [
         label: "Die falsche Spur korrigieren",
         description:
           "Du ordnest die Hinweise neu und gehst vorsichtiger weiter.",
-        nextSceneId: "handelsroute-spur-verloren",
+        nextSceneId: "hinterhalt-handelsroute",
+      },
+    ],
+  },
+  {
+    id: "hinterhalt-handelsroute",
+    title: "Hinterhalt auf der Handelsroute",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "DM",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Die Spur führt tiefer zwischen Marktständen und nassen Torbögen hindurch. Dann reißt der Regen kurz auf, und Schatten lösen sich aus den Gassen. Der Kampf beginnt nach D&D 5e: Initiative, Bewegung, Aktion, Bonusaktion und Reaktion werden vom Backend ausgewertet.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Ein Schattenräuber tritt aus dem Regen. Zwei weitere Silhouetten bewegen sich seitlich durch die Gasse.",
+      },
+      {
+        speaker: "DM",
+        text: "Der vordere Gegner bleibt knapp außerhalb der Klingenreichweite stehen. Seine Haltung wirkt nicht hastig, sondern geplant.",
+      },
+      {
+        speaker: "Ayane",
+        text: "Ich halte die Linie. Sag mir, wann ich Licht oder Klinge brauche.",
+      },
+    ],
+    choices: [
+      {
+        id: "combat-ryu-katana",
+        label: "Ryu geht in Reichweite und greift mit dem Katana an",
+        description:
+          "Ryu bewegt sich bis zu 30 ft. zum vorderen Schattenräuber und nutzt seine Aktion für einen Nahkampfangriff.",
+        nextSceneId: "kampf-katana-erster-schlag",
+      },
+      {
+        id: "combat-ryu-kunai",
+        label: "Ryu bleibt auf Distanz und wirft ein Kunai",
+        description:
+          "Ryu bleibt außerhalb der direkten Reichweite und nutzt einen Fernkampfangriff mit Kunai.",
+        nextSceneId: "kampf-kunai-distanz",
+      },
+      {
+        id: "combat-ayane-companion",
+        label: "Ayane handeln lassen",
+        description:
+          "Der DM entscheidet Ayanes Companion-Aktion nach Lage des Kampfes. Danach würfelst du den geforderten Angriff, Zauber oder Heilwurf.",
+        nextSceneId: "kampf-ayane-licht",
+      },
+      {
+        id: "combat-read-enemy",
+        label: "Den Gegner lesen und seine Bewegung einschätzen",
+        description:
+          "Ryu beobachtet Fußarbeit, Abstand und Angriffswinkel, bevor er sich festlegt.",
+        nextSceneId: "kampf-gegner-gelesen",
+        failureSceneId: "kampf-gegner-nicht-gelesen",
+        natural20SceneId: "kampf-gegner-perfekt-gelesen",
+        natural1SceneId: "kampf-gegner-falsch-gelesen",
+        checks: [
+          {
+            ability: "WIS",
+            skill: "Insight",
+            dc: 13,
+          },
+          {
+            ability: "WIS",
+            skill: "Perception",
+            dc: 13,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "kampf-gegner-gelesen",
+    title: "Der erste Winkel",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "DM",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Ryu erkennt den Rhythmus des vorderen Gegners. Der Schattenräuber setzt das Gewicht zu stark auf das linke Bein und will euch in die engere Gasse drängen.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Ryu liest den ersten Bewegungswinkel. Der Gegner will nicht nur angreifen, sondern euch von der offenen Straße trennen.",
+      },
+      {
+        speaker: "Ayane",
+        text: "Dann bleiben wir aus der Gasse. Ich decke die Seite.",
+      },
+    ],
+    choices: [
+      {
+        id: "start-initiative-after-read-success",
+        label: "Initiative auswürfeln",
+        description:
+          "Der Kampf beginnt. Ryu, Ayane und die Gegner würfeln Initiative, bevor die erste Runde festgelegt wird.",
+        nextSceneId: "kampf-initiative-start",
+      },
+    ],
+  },
+  {
+    id: "kampf-gegner-nicht-gelesen",
+    title: "Zu viele Schatten",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "DM",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Regen, Laternenlicht und schnelle Schritte machen die Bewegung schwer lesbar. Der Gegner bleibt gefährlich unklar.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Ryu erkennt, dass der Gegner erfahren ist, aber nicht, welchen Winkel er zuerst nimmt.",
+      },
+      {
+        speaker: "DM",
+        text: "Die Schatten bewegen sich schneller. Jetzt entscheidet die Initiative.",
+      },
+    ],
+    choices: [
+      {
+        id: "start-initiative-after-read-failure",
+        label: "Initiative auswürfeln",
+        description:
+          "Der Kampf beginnt ohne klaren Vorteil. Ryu, Ayane und die Gegner würfeln Initiative.",
+        nextSceneId: "kampf-initiative-start",
+      },
+    ],
+  },
+  {
+    id: "kampf-gegner-perfekt-gelesen",
+    title: "Perfekter Kampfblick",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "DM",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Ryu sieht den Angriff, bevor er beginnt. Der Schattenräuber täuscht rechts an, doch sein Stand verrät den wahren Schnitt.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Ryu liest den Gegner perfekt. Der erste Angriff wird über die linke Flanke kommen.",
+      },
+      {
+        speaker: "Ayane",
+        text: "Ich sehe es. Wenn er zieht, bleibt seine Mitte offen.",
+      },
+    ],
+    choices: [
+      {
+        id: "start-initiative-after-read-nat20",
+        label: "Mit Vorteil in die Initiative gehen",
+        description:
+          "Der Kampf beginnt. Der DM kann diesen perfekten Blick später als taktischen Vorteil auswerten.",
+        nextSceneId: "kampf-initiative-start",
+      },
+    ],
+  },
+  {
+    id: "kampf-gegner-falsch-gelesen",
+    title: "Falscher Winkel",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "DM",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Ryu deutet die Bewegung falsch. Der Schattenräuber lässt genau diese falsche Annahme zu und setzt den ersten Schritt anders, als erwartet.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Für einen Augenblick wirkt die rechte Seite offen. Dann kippt der Gegner den Stand und die Falle wird sichtbar.",
+      },
+      {
+        speaker: "Ayane",
+        text: "Ryu, nicht dahin. Er will dich ziehen.",
+      },
+    ],
+    choices: [
+      {
+        id: "start-initiative-after-read-nat1",
+        label: "Initiative unter Druck auswürfeln",
+        description:
+          "Der Kampf beginnt mit schlechter Positionierung. Der DM kann diese Fehldeutung als taktischen Nachteil auswerten.",
+        nextSceneId: "kampf-initiative-start",
+      },
+    ],
+  },
+  {
+    id: "kampf-katana-erster-schlag",
+    title: "Erster Schlag",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "DM",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Ryu tritt durch den Regen nach vorn. Stahl zieht eine helle Linie durch die Dunkelheit, während der Schattenräuber seine Klinge hebt.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Ryu schließt die Distanz. Der Schattenräuber reagiert schnell, aber nicht schnell genug, um den Angriff einfach zu ignorieren.",
+      },
+      {
+        speaker: "DM",
+        text: "Für einen Moment entscheidet nur der Wurf, ob Ryus Klinge die Deckung des Gegners bricht.",
+      },
+    ],
+    choices: [
+      {
+        id: "combat-return-after-katana",
+        label: "Initiative auswürfeln",
+        description:
+          "Der Kampf beginnt. Ryu, Ayane und die Gegner würfeln Initiative, bevor die erste Kampfrunde festgelegt wird.",
+        nextSceneId: "kampf-initiative-start",
+      },
+    ],
+  },
+  {
+    id: "kampf-kunai-distanz",
+    title: "Kunai im Regen",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "DM",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Ryu bleibt auf Distanz. Ein Kunai verschwindet für einen Herzschlag im Regen, bevor es auf den Schattenräuber zusaust.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Ryu nutzt den Abstand, statt ihn aufzugeben. Der Wurf zwingt den Gegner, seine Bewegung zu ändern.",
+      },
+      {
+        speaker: "DM",
+        text: "Der Gegner muss wählen: weiter vorrücken oder dem heranschneidenden Stahl ausweichen.",
+      },
+    ],
+    choices: [
+      {
+        id: "combat-return-after-kunai",
+        label: "Initiative auswürfeln",
+        description:
+          "Der Kampf beginnt. Ryu, Ayane und die Gegner würfeln Initiative, bevor die erste Kampfrunde festgelegt wird.",
+        nextSceneId: "kampf-initiative-start",
+      },
+    ],
+  },
+  {
+    id: "kampf-ayane-licht",
+    title: "Ayanes Licht",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "Ayane",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Ayane hebt die Hand. Warmes Licht sammelt sich zwischen ihren Fingern, nicht grell, sondern kontrolliert.",
+    dialogueLines: [
+      {
+        speaker: "Ayane",
+        text: "Ich halte ihn offen. Wenn er Ryu bedrängt, nehme ich ihm den Winkel.",
+      },
+      {
+        speaker: "DM",
+        text: "Ihr Blick springt zwischen Ryu und dem Schattenräuber. Sie wartet nur auf den Moment, in dem ihre Hilfe den Kampf kippt.",
+      },
+    ],
+    choices: [
+      {
+        id: "combat-return-after-ayane",
+        label: "Initiative auswürfeln",
+        description:
+          "Der Kampf beginnt. Ryu, Ayane und die Gegner würfeln Initiative, bevor die erste Kampfrunde festgelegt wird.",
+        nextSceneId: "kampf-initiative-start",
+      },
+    ],
+  },
+  {
+    id: "kampf-initiative-start",
+    title: "Initiative",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "DM",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Die Schatten ziehen Waffen. Jetzt wird die Reihenfolge entschieden: Ryu, Ayane und jeder Gegner würfeln Initiative, bevor die erste Kampfrunde beginnt.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Die Zeit zieht sich zusammen. Erst Initiative, dann handelt jede Kreatur in Reihenfolge.",
+      },
+      {
+        speaker: "DM",
+        text: "Ryu, Ayane und die Schatten setzen gleichzeitig an. Wer zuerst handelt, entscheidet der Moment zwischen Atemzug und Klinge.",
+      },
+    ],
+    choices: [
+      {
+        id: "initiative-placeholder-ready",
+        label: "Initiative im Charakterbogen würfeln",
+        description:
+          "Würfle Initiative für Ryu und Ayane. Danach kann die erste echte Kampfrunde mit Backend-Reihenfolge starten.",
+        nextSceneId: "kampf-initiative-start",
+      },
+    ],
+  },
+  {
+    id: "kampf-runde-eins",
+    title: "Kampfrunde 1",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "DM",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Die Reihenfolge steht. Regen läuft über Stahl, während die erste Kampfrunde beginnt und jede Entscheidung Raum, Reichweite und Risiko verändert.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Die Initiative ist entschieden. Jetzt handelt jede Kreatur in Reihenfolge.",
+      },
+      {
+        speaker: "DM",
+        text: "Ryu und Ayane stehen bereit. Die Schattenräuber verteilen sich in der Gasse und suchen den ersten Fehler.",
+      },
+    ],
+    choices: [
+      {
+        id: "round-one-ryu-attack",
+        label: "Ryu greift den vorderen Schattenräuber an",
+        description:
+          "Ryu nutzt seine Aktion für einen Angriff. Wähle im Charakterbogen Katana oder Kunai, damit der Wurf im HUD erscheint.",
+        nextSceneId: "kampf-runde-eins-ryu-angriff",
+      },
+      {
+        id: "round-one-ayane-support",
+        label: "Ayane unterstützt nach DM-Ansage",
+        description:
+          "Der DM beschreibt Ayanes Companion-Aktion. Danach würfelst du über Ayanes NPC-Bogen.",
+        nextSceneId: "kampf-runde-eins-ayane-unterstuetzt",
+      },
+      {
+        id: "round-one-defensive-read",
+        label: "Ryu bleibt defensiv und beobachtet die Gegner",
+        description:
+          "Ryu hält die Position und sucht nach dem nächsten Angriffswinkel der Schattenräuber.",
+        nextSceneId: "kampf-runde-eins-defensiv-erkannt",
+        failureSceneId: "kampf-runde-eins-defensiv-unklar",
+        natural20SceneId: "kampf-runde-eins-defensiv-perfekt",
+        natural1SceneId: "kampf-runde-eins-defensiv-fehler",
+        checks: [
+          {
+            ability: "WIS",
+            skill: "Insight",
+            dc: 14,
+          },
+          {
+            ability: "WIS",
+            skill: "Perception",
+            dc: 14,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "kampf-runde-eins-ryu-angriff",
+    title: "Ryus Angriff",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "DM",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Ryu tritt in die Kampflinie. Regen schlägt gegen Stahl, während der vordere Schattenräuber seine Deckung hebt.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Ryu ist am Zug. Wähle im Charakterbogen Katana für den Nahkampf oder Kunai für den Distanzwurf.",
+      },
+      {
+        speaker: "DM",
+        text: "Der Angriffswurf entscheidet, ob die Deckung des Schattenräubers bricht. Danach wird der Schaden ausgewertet.",
+      },
+    ],
+    choices: [
+      {
+        id: "ryu-attack-resolved",
+        label: "Angriffswurf im Charakterbogen ausführen",
+        description:
+          "Würfle zuerst Angriff und danach Schaden über Ryus Aktionen. Der Backend-Kampfresolver wertet Treffer und Schaden später automatisch aus.",
+        nextSceneId: "kampf-runde-eins-nach-ryu",
+      },
+    ],
+  },
+  {
+    id: "kampf-runde-eins-nach-ryu",
+    title: "Nach Ryus Angriff",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "DM",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Der erste Schlag zwingt die Schattenräuber, ihre Formation zu ändern. Einer weicht zurück, der andere sucht eine Lücke.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Ryus Angriff verändert die Distanz. Die Schattenräuber verlieren für einen Moment ihre klare Linie.",
+      },
+      {
+        speaker: "Ayane",
+        text: "Ich sehe die Öffnung. Wenn du sie bindest, halte ich die Flanke.",
+      },
+    ],
+    choices: [
+      {
+        id: "continue-to-ayane-support",
+        label: "Ayane in die Handlung einbinden",
+        description:
+          "Der DM beschreibt Ayanes Companion-Aktion für diese Runde.",
+        nextSceneId: "kampf-runde-eins-ayane-unterstuetzt",
+      },
+    ],
+  },
+  {
+    id: "kampf-runde-eins-ayane-unterstuetzt",
+    title: "Ayanes Unterstützung",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "Ayane",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Ayane bleibt nicht passiv. Sie hält Abstand, liest die Flanke und sucht den Moment, in dem ihre Hilfe mehr zählt als ein überstürzter Schlag.",
+    dialogueLines: [
+      {
+        speaker: "Ayane",
+        text: "Ich halte Licht bereit. Wenn einer durchbricht, zwinge ich ihn zurück.",
+      },
+      {
+        speaker: "DM",
+        text: "Ayane kann jetzt über den NPC-Bogen handeln: Angriff, Schaden oder später Heilung, abhängig von der DM-Ansage.",
+      },
+    ],
+    choices: [
+      {
+        id: "ayane-action-resolved",
+        label: "Ayanes Aktion im NPC-Bogen würfeln",
+        description:
+          "Würfle die vom DM angesagte Aktion über Ayanes NPC-Begleiterbogen.",
+        nextSceneId: "kampf-runde-eins-gegner-am-zug",
+      },
+    ],
+  },
+  {
+    id: "kampf-runde-eins-defensiv-erkannt",
+    title: "Defensive Linie",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "DM",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Ryu bleibt ruhig und liest die Bewegung. Die Schattenräuber wollen nicht sofort töten, sondern euch trennen.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Ryu erkennt den Plan: Ein Gegner bindet vorne, der zweite will über die Seite an Ayane vorbei.",
+      },
+      {
+        speaker: "Ayane",
+        text: "Dann halte ich mich nicht zu weit links. Sag mir, wen du bindest.",
+      },
+    ],
+    choices: [
+      {
+        id: "defensive-go-to-enemy-turn",
+        label: "Gegnerzug abwarten",
+        description:
+          "Ryu behält die defensive Linie. Die Gegner sind am Zug.",
+        nextSceneId: "kampf-runde-eins-gegner-am-zug",
+      },
+    ],
+  },
+  {
+    id: "kampf-runde-eins-defensiv-unklar",
+    title: "Unklare Flanke",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "DM",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Ryu bleibt defensiv, aber der Regen macht die Bewegung schwer lesbar. Die Schattenräuber nutzen die Unklarheit.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Du siehst Bewegung, aber nicht den genauen Winkel. Der nächste Gegnerzug bleibt gefährlich offen.",
+      },
+    ],
+    choices: [
+      {
+        id: "unclear-go-to-enemy-turn",
+        label: "Gegnerzug abwarten",
+        description:
+          "Die Gegner handeln, bevor die Linie vollständig gelesen ist.",
+        nextSceneId: "kampf-runde-eins-gegner-am-zug",
+      },
+    ],
+  },
+  {
+    id: "kampf-runde-eins-defensiv-perfekt",
+    title: "Perfekte Kampflesung",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "DM",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Ryu erkennt den Gegnerzug, bevor er beginnt. Jeder Schritt der Schattenräuber verrät ihre Absicht.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Natural 20: Ryu liest die komplette Flanke. Der nächste Angriff kann taktisch vorbereitet werden.",
+      },
+    ],
+    choices: [
+      {
+        id: "perfect-read-go-to-enemy-turn",
+        label: "Gegnerzug mit taktischem Vorteil abwarten",
+        description:
+          "Die DM-Logik kann diese perfekte Lesung später als Vorteil für Reaktion oder Positionierung auswerten.",
+        nextSceneId: "kampf-runde-eins-gegner-am-zug",
+      },
+    ],
+  },
+  {
+    id: "kampf-runde-eins-defensiv-fehler",
+    title: "Falsche Deckung",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "DM",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Ryu liest den Winkel falsch. Ein Schattenräuber nutzt den Moment und setzt genau dorthin an, wo die Deckung schwächer ist.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Natural 1: Die Linie wirkt sicher, aber der Gegner hat diese Reaktion erwartet.",
+      },
+    ],
+    choices: [
+      {
+        id: "bad-read-go-to-enemy-turn",
+        label: "Gegnerzug unter Druck abwarten",
+        description:
+          "Die Gegner handeln mit besserer Position, bis die Backend-Kampfauflösung aktiv übernimmt.",
+        nextSceneId: "kampf-runde-eins-gegner-am-zug",
+      },
+    ],
+  },
+  {
+    id: "kampf-runde-eins-gegner-am-zug",
+    title: "Gegner am Zug",
+    location: "Falkenwacht - Innere Handelsroute",
+    chapter: "Session 1 · Kampf",
+    speaker: "DM",
+    imageUrl: "/scenes/combat-ambush-trade-route.png",
+    narration:
+      "Die Schattenräuber handeln. Einer bindet die Front, der andere sucht Raum, um die Linie zwischen Ryu und Ayane aufzubrechen.",
+    dialogueLines: [
+      {
+        speaker: "DM",
+        text: "Der Gegnerzug ist vorbereitet. Sobald Backend-Encounter aktiv sind, würfelt der DM verdeckt Angriff und Schaden.",
+      },
+      {
+        speaker: "DM",
+        text: "Für das Frontend-MVP endet die erste Kampfrunde hier und bleibt bereit für die Backend-Kampfauflösung.",
+      },
+    ],
+    choices: [
+      {
+        id: "round-one-back-to-order",
+        label: "Kampfrunde 1 erneut anzeigen",
+        description:
+          "Zurück zur Kampfrundenübersicht, bis die Backend-Kampfauflösung die nächste Runde erzeugt.",
+        nextSceneId: "kampf-runde-eins",
       },
     ],
   },
