@@ -1,6 +1,7 @@
 services:
   db:
     image: postgres:16
+    restart: always
     environment:
       POSTGRES_USER: dnd_user
       POSTGRES_PASSWORD: dnd_pass
@@ -12,6 +13,7 @@ services:
 
   backend:
     build: ./backend
+    restart: always
     ports:
       - "8000:8000"
     environment:
@@ -21,6 +23,7 @@ services:
 
   frontend:
     image: 577817260098.dkr.ecr.eu-central-1.amazonaws.com/falkenwacht-frontend:latest
+    restart: always
     ports:
       - "3000:3000"
     depends_on:
