@@ -309,6 +309,18 @@ const readSaveStates = (): SaveState[] => {
   }
 };
 
+const readLastSaveState = (): SaveState | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    return JSON.parse(window.localStorage.getItem(LAST_SAVE_KEY) ?? "null");
+  } catch {
+    return null;
+  }
+};
+
 export default function Home() {
   const [currentSceneId, setCurrentSceneId] = useState(initialSceneId);
   const [selectedCharacterId, setSelectedCharacterId] =
@@ -400,16 +412,32 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     const sceneParam = params.get("scene");
     const characterParam = params.get("character") as CharacterId | null;
+    const hasValidSceneParam =
+      Boolean(sceneParam) && scenes.some((scene) => scene.id === sceneParam);
+    const hasValidCharacterParam =
+      characterParam === "ryu" || characterParam === "ayane";
 
-    if (sceneParam && scenes.some((scene) => scene.id === sceneParam)) {
+    if (hasValidSceneParam && sceneParam) {
       setCurrentSceneId(sceneParam);
     }
 
-    if (
-      characterParam &&
-      (characterParam === "ryu" || characterParam === "ayane")
-    ) {
+    if (hasValidCharacterParam && characterParam) {
       setSelectedCharacterId(characterParam);
+    }
+
+    if (hasValidSceneParam || hasValidCharacterParam) {
+      return;
+    }
+
+    const lastSaveState = readLastSaveState();
+
+    if (
+      lastSaveState &&
+      scenes.some((scene) => scene.id === lastSaveState.sceneId) &&
+      (lastSaveState.characterId === "ryu" || lastSaveState.characterId === "ayane")
+    ) {
+      setCurrentSceneId(lastSaveState.sceneId);
+      setSelectedCharacterId(lastSaveState.characterId);
     }
   }, []);
 
