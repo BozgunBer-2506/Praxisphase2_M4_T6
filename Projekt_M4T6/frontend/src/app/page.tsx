@@ -1296,8 +1296,8 @@ export default function Home() {
   ]);
 
   return (
-    <main className="h-screen overflow-hidden px-4 py-3 text-slate-50 sm:px-6 lg:px-8">
-      <section className="mx-auto flex h-full max-w-6xl flex-col gap-3">
+    <main className="min-h-dvh overflow-y-auto px-3 py-3 text-slate-50 sm:px-4 lg:h-dvh lg:overflow-hidden lg:px-5">
+      <section className="mx-auto flex min-h-dvh w-full max-w-[100rem] flex-col gap-3 lg:h-full lg:min-h-0">
         <header className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.22em] text-ember-400">
@@ -1492,8 +1492,8 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[18rem_minmax(0,1fr)] gap-3">
-          <aside className="relative z-30 min-h-0 overflow-y-auto rounded-md border border-white/10 bg-ink-950/70 p-3">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(16rem,19rem)_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)]">
+          <aside className="relative z-30 max-h-[32rem] min-h-0 overflow-y-auto rounded-md border border-white/10 bg-ink-950/70 p-3 lg:max-h-none">
             <button
               className="mb-3 flex w-full items-center justify-between rounded-md border border-white/10 bg-white/[0.06] px-3 py-2 text-left"
               onClick={() => setIsSheetExpanded((isExpanded) => !isExpanded)}
@@ -2033,7 +2033,7 @@ export default function Home() {
 
         <section className="flex min-h-0 flex-col justify-end overflow-hidden rounded-md border border-white/10 bg-ink-950/70 shadow-2xl">
           <div
-            className="relative flex aspect-video max-h-[calc(100vh-21rem)] min-h-0 flex-none items-end bg-cover bg-center p-4 lg:p-5"
+            className="relative flex aspect-video w-full min-h-[18rem] max-h-[58dvh] flex-none items-end bg-cover bg-center p-4 lg:min-h-0 lg:max-h-[calc(100dvh-20rem)] lg:p-5"
             style={{
               backgroundImage: `linear-gradient(180deg,rgba(17,24,39,0.22),rgba(3,4,10,0.94)),url('${currentScene.imageUrl}')`,
             }}
@@ -2284,16 +2284,11 @@ export default function Home() {
         </div>
       </section>
       <aside
-        className={`fixed bottom-3 right-2 z-[80] max-w-[calc(100vw-1rem)] rounded-md border border-ember-400/40 bg-ink-950/95 p-2 text-slate-50 shadow-2xl transition-all ${
-          isDicePanelOpen ? "w-40" : "w-20"
-        }`}
+        className="fixed bottom-3 right-4 z-[80] w-[5.5rem] p-2.5 text-slate-50 sm:right-6"
       >
         <button
-          aria-label={
-            isDicePanelOpen ? "Würfel-HUD einklappen" : "Würfel-HUD ausklappen"
-          }
+          aria-label="Letztes Wuerfelergebnis"
           className="relative mx-auto grid size-16 place-items-center"
-          onClick={() => setIsDicePanelOpen((isOpen) => !isOpen)}
           type="button"
         >
           <span
@@ -2322,139 +2317,7 @@ export default function Home() {
             </svg>
             <span className="d20-result-number">{rollResult?.total ?? "d20"}</span>
           </span>
-          <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full border border-white/15 bg-ink-950/95 text-white">
-            {isDicePanelOpen ? (
-              <ChevronDown className="size-3" />
-            ) : (
-              <ChevronRight className="size-3" />
-            )}
-          </span>
         </button>
-        <div className="hidden">
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-ember-300">
-              Würfel
-            </p>
-            <p className="text-sm font-bold leading-tight">
-              {rollResult?.label ?? "Bereit"}
-            </p>
-          </div>
-          <div
-            className={`grid size-14 shrink-0 place-items-center rounded-lg border bg-gradient-to-br text-xl font-black shadow-glow ${diceColorClass[diceColor]}`}
-          >
-            {rollResult?.total ?? "d20"}
-          </div>
-        </div>
-
-        {isDicePanelOpen ? (
-          <div className="mt-2 space-y-2">
-        <div className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.04] px-2 py-1.5">
-          <span className="inline-flex items-center gap-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-slate-400">
-            <Palette className="size-3" />
-            Farbe
-          </span>
-          <div className="flex gap-1">
-            {(["ember", "arcane", "venom", "blood"] as DiceColor[]).map(
-              (color) => (
-                <button
-                  aria-label={`Würfelfarbe ${color}`}
-                  className={`size-4 rounded-full border transition ${
-                    diceColor === color
-                      ? "border-white ring-2 ring-white/20"
-                      : "border-white/20 hover:border-white/60"
-                  } ${diceColorDotClass[color]}`}
-                  key={color}
-                  onClick={() => setDiceColor(color)}
-                  type="button"
-                />
-              ),
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-1">
-          {diceTypes.map((item) => (
-            <button
-              className={`rounded-md border px-2 py-1.5 text-xs font-bold transition ${
-                diceType === item
-                  ? "border-ember-400 bg-ember-500 text-ink-950"
-                  : "border-white/10 bg-white/[0.06] text-slate-100 hover:border-ember-400/70"
-              }`}
-              key={item}
-              onClick={() => setDiceType(item)}
-              type="button"
-            >
-              d{item}
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-2 grid grid-cols-1 gap-1">
-          {(["normal", "advantage", "disadvantage"] as RollMode[]).map(
-            (mode) => (
-              <button
-                className={`rounded-md border px-2 py-1.5 text-xs font-semibold transition ${
-                  rollMode === mode
-                    ? "border-ember-400 bg-ember-500 text-ink-950"
-                    : "border-white/10 bg-white/[0.06] text-slate-100 hover:border-ember-400/70"
-                }`}
-                disabled={diceType !== 20 && mode !== "normal"}
-                key={mode}
-                onClick={() => setRollMode(mode)}
-                type="button"
-              >
-                {mode === "normal"
-                  ? "Normal"
-                  : mode === "advantage"
-                    ? "Vorteil"
-                    : "Nachteil"}
-              </button>
-            ),
-          )}
-        </div>
-
-        <div className="mt-2 grid gap-2">
-          <input
-            aria-label="Würfelmodifikator"
-            className="h-9 rounded-md border border-white/10 bg-white/[0.06] px-3 text-sm text-slate-100 outline-none"
-            onChange={(event) => setRollModifier(Number(event.target.value) || 0)}
-            type="number"
-            value={rollModifier}
-          />
-          <button
-            className="h-9 rounded-md border border-ember-400/50 bg-ember-500 px-3 text-sm font-bold text-ink-950 transition hover:bg-ember-400"
-            onClick={rollManualDice}
-            type="button"
-          >
-            Würfeln
-          </button>
-        </div>
-
-        {rollResult ? (
-          <p className="text-xs text-slate-400">
-            {rollResult.rolls.join(" / ")} + Mod {rollResult.modifier}
-          </p>
-        ) : null}
-
-        {hudEvents.length > 0 ? (
-          <div className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-2">
-            <p className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-ember-300">
-              Backend-HUD
-            </p>
-            <div className="mt-1 space-y-1">
-              {hudEvents.slice(0, 3).map((event, index) => (
-                <p
-                  className="text-xs leading-snug text-slate-300"
-                  key={`${event.type}-${event.label ?? "event"}-${index}`}
-                >
-                  {formatHudEvent(event)}
-                </p>
-              ))}
-            </div>
-          </div>
-        ) : null}
-          </div>
-        ) : null}
       </aside>
     </main>
   );
