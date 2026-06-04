@@ -466,6 +466,7 @@ export default function Home() {
   );
   const [hudEvents, setHudEvents] = useState<HudEvent[]>([]);
   const [pendingCheck, setPendingCheck] = useState<PendingCheck | null>(null);
+  const [openChoiceCheckId, setOpenChoiceCheckId] = useState<string | null>(null);
   const [gameLog, setGameLog] = useState<GameLogEntry[]>([
     {
       id: "log-start",
@@ -1014,14 +1015,16 @@ export default function Home() {
   const getChoiceChecks = (choice: Choice) =>
     choice.check ? [choice.check] : choice.checks ?? [];
 
+  const formatCheckName = (check: SkillCheck) =>
+    check.skill ? `${check.skill} (${check.ability})` : check.ability;
+
   const formatChecks = (checks: SkillCheck[]) =>
     checks
-      .map((check) => `${check.skill ?? check.ability} DC ${check.dc}`)
+      .map((check) => `${formatCheckName(check)} DC ${check.dc}`)
       .join(" oder ");
 
   const formatChoiceDescription = (choice: Choice) => {
-    const checks = getChoiceChecks(choice);
-    const personalized = choice.description
+    return choice.description
       .replace(/^Du nimmst/, `${actorName} nimmt`)
       .replace(/^Du willst/, `${actorName} will`)
       .replace(/^Du beobachtest/, `${actorName} beobachtet`)
@@ -1033,9 +1036,98 @@ export default function Home() {
       .replace(/^Du merkst/, `${actorName} merkt`)
       .replace(/^Du trittst/, `${actorName} tritt`);
 
-    return checks.length > 0
-      ? `${personalized} (${formatChecks(checks)})`
-      : personalized;
+  };
+
+  const renderChoiceButton = (choice: Choice) => {
+    const checks = getChoiceChecks(choice);
+    const hasChecks = checks.length > 0;
+    const isCheckDropdownOpen = openChoiceCheckId === choice.id;
+    const runChoiceCheck = (check: SkillCheck) => {
+      const skillName = check.skill ?? check.ability;
+      const skillModifier =
+        activeSheet?.skills.find(([label]) => label === skillName)?.[1] ?? "+0";
+
+      setPendingCheck({ choice, checks });
+      setOpenChoiceCheckId(null);
+      rollFormula(`${actorName} ${skillName}`, `1d20${skillModifier}`, {
+        pendingCheckOverride: { choice, checks },
+        skill: skillName,
+      });
+    };
+
+    return (
+      <div
+        className="group relative"
+        key={choice.id}
+      >
+        <button
+          className="w-full rounded-md border border-white/10 bg-white/[0.06] px-3 py-3 pr-11 text-left text-sm text-slate-100 transition hover:border-ember-400/70 hover:bg-ember-500/15 focus-visible:border-ember-300 focus-visible:outline-none"
+          onClick={() => {
+            setOpenChoiceCheckId(null);
+            chooseAction(choice);
+          }}
+          type="button"
+        >
+          <span className="block min-w-0 font-semibold">{choice.label}</span>
+          <span className="mt-1 block text-xs leading-relaxed text-slate-400">
+            {formatChoiceDescription(choice)}
+          </span>
+        </button>
+
+        {hasChecks ? (
+          <button
+            aria-expanded={isCheckDropdownOpen}
+            aria-label={`Skillchecks für ${choice.label} anzeigen`}
+            className="absolute right-2 top-2 grid size-8 place-items-center rounded-md border border-ember-400/45 bg-ember-500/15 text-ember-100 transition hover:border-ember-300 hover:bg-ember-500/25 focus-visible:border-ember-300 focus-visible:outline-none"
+            onClick={(event) => {
+              event.stopPropagation();
+              setOpenChoiceCheckId((currentId) =>
+                currentId === choice.id ? null : choice.id,
+              );
+            }}
+            type="button"
+          >
+            <ChevronDown
+              className={`size-4 transition ${
+                isCheckDropdownOpen ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+        ) : null}
+
+        {hasChecks ? (
+          <div
+            className={`absolute right-0 top-12 z-50 w-52 max-w-[calc(100%-0.75rem)] origin-top-right rounded-md border border-ember-400/60 bg-ink-950 p-2 text-xs text-slate-200 shadow-2xl ring-1 ring-black/50 ${
+              isCheckDropdownOpen
+                ? "block"
+                : "hidden group-hover:block group-focus-within:block"
+            }`}
+          >
+            <p className="mb-2 text-right font-bold uppercase tracking-[0.12em] text-ember-200">
+              Skillchecks
+            </p>
+            <div className="space-y-1.5">
+              {checks.map((check) => (
+                <button
+                  className="flex w-full items-center justify-between gap-2 rounded border border-white/10 bg-white/[0.08] px-2 py-1.5 text-left font-semibold text-slate-100 transition hover:border-ember-300/80 hover:bg-ember-500/20 focus-visible:border-ember-300 focus-visible:outline-none"
+                  key={`${choice.id}-${check.ability}-${check.skill ?? "ability"}-${check.dc}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    runChoiceCheck(check);
+                  }}
+                  type="button"
+                >
+                  <span className="min-w-0 truncate">{formatCheckName(check)}</span>
+                  <span className="shrink-0 rounded bg-ember-500/20 px-1.5 py-0.5 text-ember-100">
+                    DC {check.dc}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
   };
 
   const buildLocalDmAnswer = (question: string) => {
@@ -1283,6 +1375,7 @@ export default function Home() {
     options?: {
       skill?: string;
       initiativeCharacterId?: CharacterId;
+      pendingCheckOverride?: PendingCheck;
       rollMode?: RollMode;
     },
   ) => {
@@ -1450,12 +1543,14 @@ export default function Home() {
       return;
     }
 
-    if (!pendingCheck || !options?.skill) {
+    const activePendingCheck = options?.pendingCheckOverride ?? pendingCheck;
+
+    if (!activePendingCheck || !options?.skill) {
       return;
     }
 
-    const matchingCheck = pendingCheck.checks.find(
-      (check) => check.skill === options.skill,
+    const matchingCheck = activePendingCheck.checks.find(
+      (check) => (check.skill ?? check.ability) === options.skill,
     );
 
     if (!matchingCheck) {
@@ -1466,14 +1561,16 @@ export default function Home() {
     const success = naturalRoll === 20 || result.total >= matchingCheck.dc;
     const targetSceneId =
       naturalRoll === 20
-        ? pendingCheck.choice.natural20SceneId ?? pendingCheck.choice.nextSceneId
+        ? activePendingCheck.choice.natural20SceneId ??
+          activePendingCheck.choice.nextSceneId
         : naturalRoll === 1
-          ? pendingCheck.choice.natural1SceneId ??
-            pendingCheck.choice.failureSceneId ??
-            pendingCheck.choice.nextSceneId
+          ? activePendingCheck.choice.natural1SceneId ??
+            activePendingCheck.choice.failureSceneId ??
+            activePendingCheck.choice.nextSceneId
           : success
-            ? pendingCheck.choice.nextSceneId
-            : pendingCheck.choice.failureSceneId ?? pendingCheck.choice.nextSceneId;
+            ? activePendingCheck.choice.nextSceneId
+            : activePendingCheck.choice.failureSceneId ??
+              activePendingCheck.choice.nextSceneId;
     const checkDetail =
       naturalRoll === 20
         ? `Natural 20: ${options.skill} gegen DC ${matchingCheck.dc} automatisch stark geschafft.`
@@ -1506,9 +1603,9 @@ export default function Home() {
     setPendingCheck(null);
 
     window.setTimeout(() => {
-      if (selectedCharacterId) {
-        persistSaveState(targetSceneId, selectedCharacterId, pendingCheck.choice.label);
-      }
+    if (selectedCharacterId) {
+        persistSaveState(targetSceneId, selectedCharacterId, activePendingCheck.choice.label);
+    }
 
       goToScene(targetSceneId);
     }, 900);
@@ -3014,21 +3111,7 @@ export default function Home() {
                 </div>
               ) : null}
               {isLastDialogueLine && isDialogueFullyVisible
-                ? currentScene.choices.map((choice) => (
-                    <button
-                      className="w-full rounded-md border border-white/10 bg-white/[0.06] px-3 py-3 text-left text-sm text-slate-100 transition hover:border-ember-400/70 hover:bg-ember-500/15"
-                      key={choice.id}
-                      onClick={() => chooseAction(choice)}
-                      type="button"
-                    >
-                      <span className="block font-semibold">
-                        {choice.label}
-                      </span>
-                      <span className="mt-1 block text-xs leading-relaxed text-slate-400">
-                        {formatChoiceDescription(choice)}
-                      </span>
-                    </button>
-                  ))
+                ? currentScene.choices.map((choice) => renderChoiceButton(choice))
                 : null}
             </div>
           ) : null}
@@ -3058,21 +3141,7 @@ export default function Home() {
                 </div>
               ) : null}
               {!isCharacterSelection && isLastDialogueLine && isDialogueFullyVisible
-                ? currentScene.choices.map((choice) => (
-                    <button
-                      className="w-full rounded-md border border-white/10 bg-white/[0.06] px-3 py-3 text-left text-sm text-slate-100 transition hover:border-ember-400/70 hover:bg-ember-500/15"
-                      key={choice.id}
-                      onClick={() => chooseAction(choice)}
-                      type="button"
-                    >
-                      <span className="block font-semibold">
-                        {choice.label}
-                      </span>
-                      <span className="mt-1 block text-xs leading-relaxed text-slate-400">
-                        {formatChoiceDescription(choice)}
-                      </span>
-                    </button>
-                  ))
+                ? currentScene.choices.map((choice) => renderChoiceButton(choice))
                 : null}
             </div>
 
