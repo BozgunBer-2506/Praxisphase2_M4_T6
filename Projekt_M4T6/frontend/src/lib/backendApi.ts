@@ -25,11 +25,40 @@ export type RuntimeCharacterState = {
   conditions?: string[];
 };
 
+export type EncounterInitiativeEntry = {
+  participant_id: string;
+  roll: number;
+  modifier: number;
+  total: number;
+  nat20: boolean;
+  nat1: boolean;
+};
+
+export type EncounterParticipantState = {
+  participant_id: string;
+  side: "heroes" | "enemies";
+  current_hp: number;
+  max_hp: number;
+  defeated: boolean;
+  armor_class?: number;
+  speed?: number;
+};
+
+export type EncounterState = {
+  round_number: number;
+  turn_index: number;
+  active_participant_id: string;
+  initiative_order: EncounterInitiativeEntry[];
+  participants: EncounterParticipantState[];
+  combat_finished: boolean;
+};
+
 export type SaveGameState = {
   main_character: RuntimeCharacterState;
   npc_companion?: RuntimeCharacterState | null;
   story_flags: Record<string, boolean>;
   inventory: InventoryStateItem[];
+  encounter?: EncounterState | null;
 };
 
 export type HudEvent = {
@@ -82,6 +111,90 @@ export type CombatResolveResponse = {
     remaining_hp: number;
     defeated: boolean;
   };
+};
+
+export type EncounterAutoTurnAction = {
+  action_type: "attack";
+  actor_id: string;
+  target_id: string;
+};
+
+export type FrontendEncounterActor = {
+  id: string;
+  participantId: string;
+  name: string;
+  kind: "player" | "enemy" | "unknown";
+  side?: "heroes" | "enemies" | string | null;
+  currentHp?: number | null;
+  maxHp?: number | null;
+  ac?: number | null;
+  speed?: number | null;
+  defeated?: boolean;
+  total?: number | null;
+  roll?: number | null;
+  modifier?: number | null;
+  nat20?: boolean;
+  nat1?: boolean;
+};
+
+export type FrontendEncounterTurnControl = {
+  requiresPlayerAction: boolean;
+  autoResolvable: boolean;
+  allowedActions: string[];
+  availableTargets: FrontendEncounterActor[];
+};
+
+export type FrontendEncounterResolution = {
+  actorId?: string | null;
+  targetId?: string | null;
+  combatFinished?: boolean;
+  attack: {
+    roll?: number | null;
+    modifier?: number | null;
+    total?: number | null;
+    targetAc?: number | null;
+    hit?: boolean;
+    critical?: boolean;
+    nat20?: boolean;
+    nat1?: boolean;
+  } | null;
+  damage: {
+    rolls?: number[];
+    modifier?: number | null;
+    total?: number | null;
+    critical?: boolean;
+  } | null;
+  hp: {
+    previousHp?: number | null;
+    damage?: number | null;
+    remainingHp?: number | null;
+    defeated?: boolean;
+  } | null;
+};
+
+export type FrontendEncounterState = {
+  round: number;
+  turnIndex: number;
+  activeActorId: string | null;
+  activeActor: FrontendEncounterActor | null;
+  initiativeOrder: FrontendEncounterActor[];
+  participants: FrontendEncounterActor[];
+  heroes: FrontendEncounterActor[];
+  enemies: FrontendEncounterActor[];
+  combatFinished: boolean;
+  turnControl: FrontendEncounterTurnControl;
+  hudEvents: HudEvent[];
+  lastBackendEvents: HudEvent[];
+  lastResolution: FrontendEncounterResolution | null;
+};
+
+export type SaveEncounterAutoTurnResolveResponse = {
+  slot_name: string;
+  state: SaveGameState & { encounter?: Record<string, unknown> };
+  rules_result: Record<string, unknown>;
+  hud_events: HudEvent[];
+  turn_events: HudEvent[];
+  frontend_state: FrontendEncounterState;
 };
 
 type RequestOptions = {
@@ -170,4 +283,17 @@ export async function resolveCombat(payload: CombatResolveRequest) {
     method: "POST",
     body: payload,
   });
+}
+
+export async function resolveSaveEncounterAutoTurn(
+  slotName: string,
+  action?: EncounterAutoTurnAction,
+) {
+  return request<SaveEncounterAutoTurnResolveResponse>(
+    `/saves/${encodeURIComponent(slotName)}/encounter/auto-turn/resolve`,
+    {
+      method: "POST",
+      body: action ? { action } : {},
+    },
+  );
 }

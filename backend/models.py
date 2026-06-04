@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, JSON
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, JSON
+from sqlalchemy.orm import relationship
 from database import Base
 
 
@@ -38,3 +39,36 @@ class SaveGame(Base):
     character_id = Column(String, nullable=False)
     scene_number = Column(Integer, nullable=False)
     state = Column(JSON, nullable=False)
+
+    encounters = relationship("Encounter", back_populates="save_game")
+
+
+class Encounter(Base):
+    __tablename__ = "encounters"
+
+    id = Column(Integer, primary_key=True)
+    save_game_id = Column(Integer, ForeignKey("save_games.id"), nullable=False)
+    round_number = Column(Integer, nullable=False)
+    turn_index = Column(Integer, nullable=False)
+    active_participant_id = Column(String, nullable=True)
+    combat_finished = Column(Boolean, nullable=False, default=False)
+    participants = Column(JSON, nullable=False)
+    initiative_order = Column(JSON, nullable=False)
+
+    save_game = relationship("SaveGame", back_populates="encounters")
+    turn_logs = relationship("EncounterTurnLog", back_populates="encounter")
+
+
+class EncounterTurnLog(Base):
+    __tablename__ = "encounter_turn_logs"
+
+    id = Column(Integer, primary_key=True)
+    encounter_id = Column(Integer, ForeignKey("encounters.id"), nullable=False)
+    actor_id = Column(String, nullable=True)
+    target_id = Column(String, nullable=True)
+    action_type = Column(String, nullable=False)
+    rules_result = Column(JSON, nullable=False)
+    hud_events = Column(JSON, nullable=False)
+    turn_events = Column(JSON, nullable=False)
+
+    encounter = relationship("Encounter", back_populates="turn_logs")
