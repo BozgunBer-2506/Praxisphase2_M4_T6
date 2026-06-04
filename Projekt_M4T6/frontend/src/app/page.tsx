@@ -320,6 +320,28 @@ type CombatRoundState = {
   lastResolution: FrontendEncounterState["lastResolution"];
 };
 
+type CombatAttackStep =
+  | "idle"
+  | "chooseAction"
+  | "chooseTarget"
+  | "awaitAttackRoll"
+  | "awaitDamageRoll"
+  | "turnResolved"
+  | "enemyResolving";
+
+type CombatAttackFlowState = {
+  step: CombatAttackStep;
+  actorId: string | null;
+  actionName: string | null;
+  attackFormula: string | null;
+  damageFormula: string | null;
+  targetId: string | null;
+  attackTotal: number | null;
+  attackHit: boolean | null;
+  damageTotal?: number | null;
+  remainingHp?: number | null;
+};
+
 const createInitialCombatEnemies = (): EnemyCombatState[] => [
   {
     id: "shadow-raider-1",
@@ -352,6 +374,28 @@ const createInitialCombatRoundState = (): CombatRoundState => ({
   lastBackendEvents: [],
   turnControl: null,
   lastResolution: null,
+});
+
+const createInitialCombatAttackFlowState = (): CombatAttackFlowState => ({
+  step: "idle",
+  actorId: null,
+  actionName: null,
+  attackFormula: null,
+  damageFormula: null,
+  targetId: null,
+  attackTotal: null,
+  attackHit: null,
+  damageTotal: null,
+  remainingHp: null,
+});
+
+const createCombatAttackFlowStateForActor = (
+  actor: InitiativeActor | undefined,
+  round: number,
+): CombatAttackFlowState => ({
+  ...createInitialCombatAttackFlowState(),
+  actorId: actor?.id ?? null,
+  step: round <= 0 ? "idle" : actor?.kind === "enemy" ? "enemyResolving" : "chooseAction",
 });
 
 const findScene = (sceneId: string) =>
@@ -394,6 +438,49 @@ const readLastSaveState = (): SaveState | null => {
   } catch {
     return null;
   }
+};
+
+const isValidSaveState = (saveState: SaveState | null) =>
+  Boolean(
+    saveState &&
+      scenes.some((scene) => scene.id === saveState.sceneId) &&
+      (saveState.characterId === "ryu" || saveState.characterId === "ayane"),
+  );
+
+const findActiveLastSaveState = (): SaveState | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const lastSaveState = readLastSaveState();
+  const saveStates = readSaveStates();
+  const matchingSaveState =
+    lastSaveState && isValidSaveState(lastSaveState)
+      ? saveStates.find((saveState) => saveState.id === lastSaveState.id)
+      : null;
+
+  if (!matchingSaveState) {
+    window.localStorage.removeItem(LAST_SAVE_KEY);
+    return null;
+  }
+
+  return matchingSaveState;
+};
+
+const findMatchingSaveState = (
+  sceneId: string | null,
+  characterId: CharacterId | null,
+) => {
+  if (!sceneId || !characterId) {
+    return null;
+  }
+
+  return (
+    readSaveStates().find(
+      (saveState) =>
+        saveState.sceneId === sceneId && saveState.characterId === characterId,
+    ) ?? null
+  );
 };
 
 export default function Home() {
@@ -443,6 +530,11 @@ export default function Home() {
   const [initiativeOrder, setInitiativeOrder] = useState<InitiativeActor[]>([]);
   const [combatRoundState, setCombatRoundState] = useState<CombatRoundState>(
     createInitialCombatRoundState,
+  );
+  const [combatAttackFlowState, setCombatAttackFlowState] =
+    useState<CombatAttackFlowState>(createInitialCombatAttackFlowState);
+  const [selectedCombatTargetId, setSelectedCombatTargetId] = useState<string | null>(
+    null,
   );
   const [isBackendTurnResolving, setIsBackendTurnResolving] = useState(false);
   const [initiativeStatus, setInitiativeStatus] = useState(
@@ -499,25 +591,26 @@ export default function Home() {
     const hasValidCharacterParam =
       characterParam === "ryu" || characterParam === "ayane";
 
-    if (hasValidSceneParam && sceneParam) {
-      setCurrentSceneId(sceneParam);
-    }
-
-    if (hasValidCharacterParam && characterParam) {
-      setSelectedCharacterId(characterParam);
-    }
-
     if (hasValidSceneParam || hasValidCharacterParam) {
+      const matchingSaveState =
+        hasValidSceneParam && hasValidCharacterParam
+          ? findMatchingSaveState(sceneParam, characterParam)
+          : null;
+
+      if (matchingSaveState) {
+        setCurrentSceneId(matchingSaveState.sceneId);
+        setSelectedCharacterId(matchingSaveState.characterId);
+      } else {
+        window.history.replaceState(null, "", window.location.pathname);
+        window.localStorage.removeItem(LAST_SAVE_KEY);
+      }
+
       return;
     }
 
-    const lastSaveState = readLastSaveState();
+    const lastSaveState = findActiveLastSaveState();
 
-    if (
-      lastSaveState &&
-      scenes.some((scene) => scene.id === lastSaveState.sceneId) &&
-      (lastSaveState.characterId === "ryu" || lastSaveState.characterId === "ayane")
-    ) {
+    if (lastSaveState) {
       setCurrentSceneId(lastSaveState.sceneId);
       setSelectedCharacterId(lastSaveState.characterId);
     }
@@ -565,6 +658,60 @@ export default function Home() {
     (actor) => actor.id === combatRoundState.activeActorId,
   );
   const actorName = activeCharacter?.name ?? "Der Charakter";
+  const getCombatActorName = (actorId?: string | null) => {
+    if (!actorId) {
+      return "Unbekannt";
+    }
+
+    const initiativeActor = visibleInitiativeOrder.find(
+      (actor) => actor.id === actorId,
+    );
+    const frontendCharacterId = toFrontendCharacterId(actorId);
+
+    if (initiativeActor) {
+      return initiativeActor.name;
+    }
+
+    if (frontendCharacterId) {
+      return characters[frontendCharacterId].name;
+    }
+
+    return actorId;
+  };
+  const lastCombatResolution = combatRoundState.lastResolution;
+  const isLastResolutionEnemyAction =
+    lastCombatResolution?.actorId !== undefined &&
+    visibleInitiativeOrder.some(
+      (actor) =>
+        actor.id === lastCombatResolution.actorId && actor.kind === "enemy",
+    );
+  const isLastResolutionHeroAction =
+    lastCombatResolution?.actorId !== undefined &&
+    visibleInitiativeOrder.some(
+      (actor) =>
+        actor.id === lastCombatResolution.actorId && actor.kind !== "enemy",
+    );
+  const availableCombatTargets =
+    combatRoundState.turnControl?.availableTargets ?? [];
+  const selectedCombatTarget =
+    availableCombatTargets.find((target) => target.id === selectedCombatTargetId) ??
+    null;
+  const activeCombatSheet =
+    activeCombatActor?.kind === "player"
+      ? activeSheet
+      : activeCombatActor?.kind === "companion"
+        ? companionSheet
+        : null;
+  const activeCombatActions = activeCombatSheet?.actions ?? [];
+  const combatFlowStepCopy: Record<CombatAttackStep, string> = {
+    idle: "Warte auf Kampfrunde.",
+    chooseAction: "Waehle eine Waffe oder einen Spell.",
+    chooseTarget: "Waehle ein Ziel fuer diese Aktion.",
+    awaitAttackRoll: "Angriffswurf erforderlich. Der Zug pausiert bis zum Hit Roll.",
+    awaitDamageRoll: "Treffer. Schadenwurf erforderlich, bevor der Zug endet.",
+    turnResolved: "Aktion ausgewertet. Der Zug kann beendet werden.",
+    enemyResolving: "DM-KI fuehrt den Gegnerzug verdeckt aus.",
+  };
   const backendEncounterState = useMemo<EncounterState | null>(() => {
     if (combatRoundState.round === 0 || visibleInitiativeOrder.length === 0) {
       return null;
@@ -891,6 +1038,23 @@ export default function Home() {
       turnControl: frontendState.turnControl,
       lastResolution: frontendState.lastResolution,
     }));
+    setCombatAttackFlowState({
+      actorId: frontendState.activeActorId,
+      actionName: null,
+      attackFormula: null,
+      damageFormula: null,
+      targetId: null,
+      attackTotal: null,
+      attackHit: null,
+      step:
+        frontendState.round <= 0
+          ? "idle"
+          : frontendState.turnControl?.requiresPlayerAction
+            ? "chooseAction"
+            : frontendState.turnControl?.autoResolvable
+              ? "enemyResolving"
+              : "idle",
+    });
     setRuntimeStats((currentStats) => {
       const nextStats = { ...currentStats };
 
@@ -1258,18 +1422,25 @@ export default function Home() {
 
       const nextTurnIndex = (currentState.turnIndex + 1) % order.length;
       const isNewRound = nextTurnIndex === 0;
+      const nextRound = isNewRound ? currentState.round + 1 : currentState.round;
+      const nextActor = order[nextTurnIndex];
+
+      setSelectedCombatTargetId(null);
+      setCombatAttackFlowState(
+        createCombatAttackFlowStateForActor(nextActor, nextRound),
+      );
 
       return {
         ...currentState,
-        round: isNewRound ? currentState.round + 1 : currentState.round,
-        activeActorId: order[nextTurnIndex]?.id ?? null,
+        round: nextRound,
+        activeActorId: nextActor?.id ?? null,
         turnIndex: nextTurnIndex,
         awaitingRoll: null,
       };
     });
   };
 
-  const resolveBackendCombatTurn = async () => {
+  const resolveBackendCombatTurn = async (targetId?: string) => {
     if (!activeCombatActor || isBackendTurnResolving) {
       return;
     }
@@ -1280,8 +1451,41 @@ export default function Home() {
     try {
       await syncBackendSave();
       const target =
-        combatRoundState.turnControl?.availableTargets[0] ??
-        combatRoundState.enemies.find((enemy) => enemy.currentHp > 0);
+        activeCombatActor.kind === "enemy"
+          ? undefined
+          : availableCombatTargets.find((item) => item.id === targetId) ??
+            selectedCombatTarget;
+      const needsHeroTarget = activeCombatActor.kind !== "enemy";
+
+      if (needsHeroTarget && !target) {
+        setCombatStatus("Bitte zuerst ein Ziel fuer den Angriff auswaehlen.");
+        setCombatAttackFlowState({
+          actorId: activeCombatActor.id,
+          actionName: null,
+          attackFormula: null,
+          damageFormula: null,
+          targetId: null,
+          attackTotal: null,
+          attackHit: null,
+          step: "chooseAction",
+        });
+        return;
+      }
+
+      setCombatAttackFlowState({
+        actorId: activeCombatActor.id,
+        actionName: null,
+        attackFormula: null,
+        damageFormula: null,
+        targetId: target?.id ?? null,
+        attackTotal: null,
+        attackHit: null,
+        step:
+          activeCombatActor.kind === "enemy"
+            ? "enemyResolving"
+            : "awaitAttackRoll",
+      });
+
       const action: EncounterAutoTurnAction | undefined =
         activeCombatActor.kind === "enemy"
           ? undefined
@@ -1303,6 +1507,28 @@ export default function Home() {
 
       setInventoryState(response.state.inventory);
       applyFrontendEncounterState(response.frontend_state);
+      setSelectedCombatTargetId(null);
+      setCombatAttackFlowState({
+        actorId:
+          response.frontend_state.lastResolution?.actorId ??
+          response.frontend_state.activeActorId,
+        actionName: null,
+        attackFormula: null,
+        damageFormula: null,
+        targetId: response.frontend_state.lastResolution?.targetId ?? null,
+        attackTotal: response.frontend_state.lastResolution?.attack?.total ?? null,
+        attackHit: response.frontend_state.lastResolution?.attack?.hit ?? null,
+        step:
+          response.frontend_state.lastResolution?.attack?.hit === true
+            ? "awaitDamageRoll"
+            : response.frontend_state.lastResolution
+              ? "turnResolved"
+              : response.frontend_state.turnControl?.requiresPlayerAction
+                ? "chooseAction"
+                : response.frontend_state.turnControl?.autoResolvable
+                  ? "enemyResolving"
+                  : "idle",
+      });
       setCombatStatus(
         response.frontend_state.lastResolution
           ? "Backend-Zug aufgeloest. HUD und Kampfrunde wurden aktualisiert."
@@ -1316,10 +1542,234 @@ export default function Home() {
         title: "Backend-Auto-Turn fehlgeschlagen",
         detail: error instanceof Error ? error.message : "Unbekannter Fehler",
       });
+      setCombatAttackFlowState(createInitialCombatAttackFlowState());
       advanceCombatTurn();
     } finally {
       setIsBackendTurnResolving(false);
     }
+  };
+
+  const rollCombatFormula = (label: string, formula: string) => {
+    const parsedFormula = parseDiceFormula(formula);
+
+    if (!parsedFormula) {
+      return null;
+    }
+
+    const rolls = Array.from({ length: parsedFormula.diceCount }, () =>
+      Math.floor(Math.random() * parsedFormula.diceType) + 1,
+    );
+    const selectedRoll = rolls.reduce((sum, roll) => sum + roll, 0);
+    const result: RollResult = {
+      diceType: parsedFormula.diceType,
+      rolls,
+      selectedRoll,
+      modifier: parsedFormula.modifier,
+      total: selectedRoll + parsedFormula.modifier,
+      mode: "normal",
+      label,
+    };
+
+    setRollResult(result);
+    setRollAnimationKey((currentKey) => currentKey + 1);
+    addGameLog({
+      title: label,
+      detail: `Wurf ${rolls.join(" + ")} + Mod ${parsedFormula.modifier} = ${result.total}`,
+      total: result.total,
+    });
+
+    return result;
+  };
+
+  const rollCombatAttack = () => {
+    if (
+      !activeCombatActor ||
+      !selectedCombatTarget ||
+      !combatAttackFlowState.actionName ||
+      !combatAttackFlowState.attackFormula
+    ) {
+      return;
+    }
+
+    const result = rollCombatFormula(
+      `${activeCombatActor.name} ${combatAttackFlowState.actionName} Angriff`,
+      combatAttackFlowState.attackFormula,
+    );
+
+    if (!result) {
+      return;
+    }
+
+    const targetAc = selectedCombatTarget.ac ?? 10;
+    const attackHit = result.total >= targetAc;
+    const hitText = attackHit
+      ? `${activeCombatActor.name} trifft ${selectedCombatTarget.name} mit ${combatAttackFlowState.actionName}.`
+      : `${activeCombatActor.name} verfehlt ${selectedCombatTarget.name} mit ${combatAttackFlowState.actionName}.`;
+
+    setCombatAttackFlowState((currentState) => ({
+      ...currentState,
+      attackTotal: result.total,
+      attackHit,
+      step: attackHit ? "awaitDamageRoll" : "turnResolved",
+    }));
+    setCombatStatus(
+      `${result.total} gegen AC ${targetAc}: ${
+        attackHit ? "Treffer. Schadenwurf erforderlich." : "Verfehlt. Kein Damage Roll."
+      }`,
+    );
+    setDmMessages((messages) => [
+      ...messages,
+      {
+        id: createId(),
+        sender: "DM",
+        text: attackHit
+          ? `${hitText} Bitte wuerfle jetzt den Schaden.`
+          : `${hitText} Der Zug kann beendet werden.`,
+      },
+    ]);
+  };
+
+  const rollCombatDamage = () => {
+    if (
+      !activeCombatActor ||
+      !combatAttackFlowState.targetId ||
+      !combatAttackFlowState.actionName ||
+      !combatAttackFlowState.damageFormula ||
+      combatAttackFlowState.attackHit !== true
+    ) {
+      return;
+    }
+
+    const result = rollCombatFormula(
+      `${activeCombatActor.name} ${combatAttackFlowState.actionName} Schaden`,
+      combatAttackFlowState.damageFormula,
+    );
+
+    if (!result) {
+      return;
+    }
+
+    let targetName = "Ziel";
+    let remainingHp = 0;
+
+    setCombatRoundState((currentState) => {
+      const nextEnemies = currentState.enemies.map((enemy) => {
+        if (enemy.id !== combatAttackFlowState.targetId) {
+          return enemy;
+        }
+
+        targetName = enemy.name;
+        remainingHp = Math.max(0, enemy.currentHp - result.total);
+
+        return {
+          ...enemy,
+          currentHp: remainingHp,
+          conditions:
+            remainingHp <= 0
+              ? Array.from(new Set([...enemy.conditions, "Besiegt"]))
+              : enemy.conditions,
+        };
+      });
+
+      return {
+        ...currentState,
+        enemies: nextEnemies,
+        awaitingRoll: null,
+      };
+    });
+    setCombatAttackFlowState((currentState) => ({
+      ...currentState,
+      damageTotal: result.total,
+      remainingHp,
+      step: "turnResolved",
+    }));
+    setCombatStatus(
+      `${combatAttackFlowState.actionName} verursacht ${result.total} Schaden. ${targetName}: HP ${remainingHp}.`,
+    );
+    setDmMessages((messages) => [
+      ...messages,
+      {
+        id: createId(),
+        sender: "DM",
+        text: `${activeCombatActor.name} verursacht ${result.total} Schaden mit ${combatAttackFlowState.actionName}. ${targetName} hat noch ${remainingHp} HP.`,
+      },
+    ]);
+  };
+
+  const resolveLocalEnemyTurn = () => {
+    if (!activeCombatActor || activeCombatActor.kind !== "enemy") {
+      return;
+    }
+
+    const heroTargets = [activeCharacter, activeNpc].filter(
+      (character): character is NonNullable<typeof character> => Boolean(character),
+    );
+    const aliveHeroTargets = heroTargets.filter(
+      (character) => runtimeStats[character.id].currentHp > 0,
+    );
+    const target =
+      aliveHeroTargets[Math.floor(Math.random() * aliveHeroTargets.length)] ??
+      heroTargets[0];
+
+    if (!target) {
+      return;
+    }
+
+    const targetStats = runtimeStats[target.id];
+    const attackRoll = Math.floor(Math.random() * 20) + 1;
+    const attackModifier = 4;
+    const attackTotal = attackRoll + attackModifier;
+    const hit = attackTotal >= targetStats.ac;
+    const damageRoll = hit ? Math.floor(Math.random() * 6) + 1 + 2 : 0;
+    const remainingHp = hit
+      ? Math.max(0, targetStats.currentHp - damageRoll)
+      : targetStats.currentHp;
+
+    if (hit) {
+      setRuntimeStats((currentStats) => ({
+        ...currentStats,
+        [target.id]: {
+          ...currentStats[target.id],
+          currentHp: remainingHp,
+        },
+      }));
+    }
+
+    setCombatAttackFlowState({
+      actorId: activeCombatActor.id,
+      actionName: "Verdeckter Angriff",
+      attackFormula: "verdeckt",
+      damageFormula: hit ? "1d6+2" : null,
+      targetId: target.id,
+      attackTotal: null,
+      attackHit: hit,
+      damageTotal: hit ? damageRoll : 0,
+      remainingHp,
+      step: "turnResolved",
+    });
+    setCombatStatus(
+      hit
+        ? `${activeCombatActor.name} trifft ${target.name}. ${target.name} erhaelt ${damageRoll} Schaden und hat noch ${remainingHp} HP.`
+        : `${activeCombatActor.name} verfehlt ${target.name}. Kein Schaden.`,
+    );
+    setDmMessages((messages) => [
+      ...messages,
+      {
+        id: createId(),
+        sender: "DM",
+        text: hit
+          ? `${activeCombatActor.name} greift ${target.name} an. Der Angriffswurf bleibt verdeckt. Treffer. ${target.name} erhaelt ${damageRoll} Schaden und hat noch ${remainingHp} HP.`
+          : `${activeCombatActor.name} greift ${target.name} an. Der Angriffswurf bleibt verdeckt. Verfehlt.`,
+      },
+    ]);
+  };
+
+  const endPlayerCombatTurn = () => {
+    if (combatAttackFlowState.step !== "turnResolved") {
+      return;
+    }
+
+    advanceCombatTurn();
   };
 
   const continueDialogue = () => {
@@ -2815,39 +3265,7 @@ export default function Home() {
               backgroundImage: `linear-gradient(180deg,rgba(17,24,39,0.22),rgba(3,4,10,0.94)),url('${currentScene.imageUrl}')`,
             }}
           >
-            {isCombatScene && visibleInitiativeOrder.length > 0 ? (
-              <div className="absolute left-3 right-3 top-3 z-20 rounded-md border border-white/10 bg-ink-950/85 px-2 py-2 shadow-2xl backdrop-blur">
-                <div className="flex items-center gap-2 overflow-x-auto">
-                  <span className="shrink-0 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-ember-300">
-                    Initiative
-                  </span>
-                  {visibleInitiativeOrder.map((actor, index) => (
-                    <div
-                      className={`flex shrink-0 items-center gap-2 rounded-md border px-2 py-1 text-xs font-bold ${
-                        actor.id === combatRoundState.activeActorId
-                          ? "border-ember-400 bg-ember-500 text-ink-950"
-                          : actor.kind === "enemy"
-                            ? "border-red-400/40 bg-red-500/10 text-red-100"
-                            : "border-white/10 bg-white/[0.06] text-slate-100"
-                      }`}
-                      key={actor.id}
-                    >
-                      <span>{index + 1}</span>
-                      <span>{actor.name}</span>
-                      {actor.total !== undefined ? (
-                        <span className="text-[0.65rem] opacity-80">
-                          {actor.total}
-                        </span>
-                      ) : (
-                        <span className="text-[0.65rem] opacity-70">DM</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {isCombatScene && combatRoundState.round > 0 ? (
+            {false && isCombatScene && combatRoundState.round > 0 ? (
               <div className="absolute left-3 right-3 top-14 z-20 grid gap-2 rounded-md border border-white/10 bg-ink-950/80 p-2 shadow-2xl backdrop-blur lg:grid-cols-[12rem_minmax(0,1fr)]">
                 <div className="rounded-md border border-ember-400/35 bg-ember-500/10 px-3 py-2">
                   <p className="text-[0.62rem] font-bold uppercase tracking-[0.18em] text-ember-300">
@@ -2874,7 +3292,7 @@ export default function Home() {
                   <button
                     className="mt-2 w-full rounded-md border border-ember-400/45 bg-ember-500/15 px-3 py-2 text-xs font-black text-ember-100 transition hover:border-ember-300 hover:bg-ember-500/25 disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={isBackendTurnResolving}
-                    onClick={resolveBackendCombatTurn}
+                    onClick={() => resolveBackendCombatTurn()}
                     type="button"
                   >
                     {isBackendTurnResolving
@@ -2980,7 +3398,7 @@ export default function Home() {
               </aside>
             ) : null}
 
-            {pendingCheck ? (
+            {!isCombatScene && pendingCheck ? (
               <div className="absolute left-1/2 top-4 z-30 w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 rounded-md border border-ember-400/60 bg-ink-950/95 p-3 text-center shadow-glow">
                 <p className="text-xs uppercase tracking-[0.18em] text-ember-300">
                   Skillcheck erforderlich
@@ -3098,7 +3516,7 @@ export default function Home() {
 
           {!isCharacterSelection ? (
             <div className="hidden min-h-20 space-y-2 overflow-y-auto border-t border-white/10 bg-ink-950/95 p-2">
-              {pendingCheck ? (
+              {!isCombatScene && pendingCheck ? (
                 <div className="rounded-md border border-ember-400/40 bg-ember-500/10 px-3 py-2 text-sm">
                   <p className="font-bold text-ember-200">
                     DM wartet auf Wurf
@@ -3110,7 +3528,7 @@ export default function Home() {
                   </p>
                 </div>
               ) : null}
-              {isLastDialogueLine && isDialogueFullyVisible
+              {!isCombatScene && isLastDialogueLine && isDialogueFullyVisible
                 ? currentScene.choices.map((choice) => renderChoiceButton(choice))
                 : null}
             </div>
@@ -3122,13 +3540,403 @@ export default function Home() {
               <p className="text-xs uppercase tracking-[0.18em] text-ember-300">
                 Spieleraktionen
               </p>
+              {isCombatScene && visibleInitiativeOrder.length > 0 ? (
+                <div className="space-y-2 rounded-md border border-white/10 bg-white/[0.04] p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[0.62rem] font-bold uppercase tracking-[0.16em] text-ember-300">
+                      Initiative
+                    </p>
+                    {combatRoundState.round > 0 ? (
+                      <span className="rounded border border-ember-400/35 bg-ember-500/10 px-2 py-1 text-[0.62rem] font-black text-ember-100">
+                        Runde {combatRoundState.round}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-1">
+                    {visibleInitiativeOrder.map((actor, index) => (
+                      <div
+                        className={`grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-2 rounded-md border px-2 py-1.5 text-[0.68rem] font-bold ${
+                          actor.id === combatRoundState.activeActorId
+                            ? "border-ember-400 bg-ember-500 text-ink-950 shadow-glow"
+                            : actor.kind === "enemy"
+                              ? "border-red-400/40 bg-red-500/10 text-red-100"
+                              : "border-white/10 bg-white/[0.06] text-slate-100"
+                        }`}
+                        key={actor.id}
+                      >
+                        <span className="grid size-5 place-items-center rounded border border-current/25 text-[0.62rem]">
+                          {index + 1}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate">{actor.name}</span>
+                          <span className="block text-[0.55rem] font-black uppercase tracking-[0.1em] opacity-70">
+                            {actor.id === combatRoundState.activeActorId
+                              ? "Am Zug"
+                              : actor.kind === "enemy"
+                                ? "Gegner"
+                                : actor.kind === "companion"
+                                  ? "Begleiter"
+                                  : "Held"}
+                          </span>
+                        </span>
+                        <span className="rounded border border-current/20 px-1.5 py-0.5 text-[0.62rem] font-black">
+                          {actor.total !== undefined ? actor.total : "DM"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {combatRoundState.round > 0 ? (
+                    <div className="rounded-md border border-ember-400/30 bg-ink-950/80 p-2 shadow-[0_0_20px_rgba(251,146,60,0.12)]">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-slate-100">
+                            {activeCombatActor
+                              ? `${activeCombatActor.name} ist am Zug`
+                              : "Zug wird vorbereitet"}
+                          </p>
+                          <p className="mt-1 text-[0.7rem] font-semibold text-slate-300">
+                            Zug {combatRoundState.turnIndex + 1}/
+                            {visibleInitiativeOrder.length}
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded border border-white/10 bg-white/[0.06] px-2 py-1 text-[0.62rem] font-black text-slate-200">
+                          5e Flow
+                        </span>
+                      </div>
+                      <div className="mt-2 grid grid-cols-3 gap-1 text-center text-[0.58rem] font-black uppercase tracking-[0.08em]">
+                        <span
+                          className={`rounded border px-1 py-1 ${
+                            combatAttackFlowState.step === "chooseAction"
+                              ? "border-ember-400 bg-ember-500 text-ink-950"
+                              : "border-white/10 bg-white/[0.04] text-slate-400"
+                          }`}
+                        >
+                          1 Aktion
+                        </span>
+                        <span
+                          className={`rounded border px-1 py-1 ${
+                            combatAttackFlowState.step === "chooseTarget"
+                              ? "border-ember-400 bg-ember-500 text-ink-950"
+                              : "border-white/10 bg-white/[0.04] text-slate-400"
+                          }`}
+                        >
+                          2 Ziel
+                        </span>
+                        <span
+                          className={`rounded border px-1 py-1 ${
+                            combatAttackFlowState.step === "awaitAttackRoll" ||
+                            combatAttackFlowState.step === "awaitDamageRoll"
+                              ? "border-emerald-400 bg-emerald-500 text-ink-950"
+                              : combatAttackFlowState.step === "turnResolved"
+                                ? "border-white/20 bg-white/[0.08] text-slate-200"
+                                : "border-white/10 bg-white/[0.04] text-slate-400"
+                          }`}
+                        >
+                          3 Roll
+                        </span>
+                      </div>
+                      <p className="mt-2 rounded border border-white/10 bg-black/25 px-2 py-1.5 text-[0.68rem] font-semibold text-slate-300">
+                        {combatFlowStepCopy[combatAttackFlowState.step]}
+                      </p>
+                      {combatRoundState.turnControl?.requiresPlayerAction &&
+                      combatAttackFlowState.step === "chooseAction" ? (
+                        <div className="mt-2 rounded-md border border-white/10 bg-black/30 p-2">
+                          <p className="text-[0.62rem] font-bold uppercase tracking-[0.14em] text-ember-300">
+                            1. Aktion waehlen
+                          </p>
+                          <div className="mt-1 grid gap-1.5">
+                            {activeCombatActions.map((action) => (
+                              <button
+                                className="rounded-md border border-white/10 bg-white/[0.05] px-2 py-2 text-left transition hover:border-ember-400/70 hover:bg-ember-500/10"
+                                key={action.name}
+                                onClick={() => {
+                                  setSelectedCombatTargetId(null);
+                                  setCombatAttackFlowState({
+                                    actorId: activeCombatActor?.id ?? null,
+                                    actionName: action.name,
+                                    attackFormula: `1d20+${action.attack}`,
+                                    damageFormula: action.damage,
+                                    targetId: null,
+                                    attackTotal: null,
+                                    attackHit: null,
+                                    step: "chooseTarget",
+                                  });
+                                }}
+                                type="button"
+                              >
+                                <span className="block text-sm font-black text-slate-100">
+                                  {action.name}
+                                </span>
+                                <span className="mt-1 block text-[0.68rem] font-semibold text-slate-300">
+                                  Hit +{action.attack} | Schaden {action.damage}
+                                </span>
+                                <span className="mt-1 block text-[0.62rem] text-slate-500">
+                                  {action.note}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      {combatRoundState.turnControl?.requiresPlayerAction &&
+                      (combatAttackFlowState.step === "chooseTarget" ||
+                        combatAttackFlowState.step === "awaitAttackRoll") ? (
+                        <div className="mt-2 rounded-md border border-white/10 bg-black/30 p-2">
+                          <p className="text-[0.62rem] font-bold uppercase tracking-[0.14em] text-ember-300">
+                            2. Ziel waehlen
+                          </p>
+                          {combatAttackFlowState.actionName ? (
+                            <p className="mt-1 text-[0.68rem] font-semibold text-slate-300">
+                              Aktion: {combatAttackFlowState.actionName}
+                            </p>
+                          ) : null}
+                          <div className="mt-1 grid gap-1.5">
+                            {availableCombatTargets.map((target) => (
+                              <button
+                                className={`flex items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-left text-xs font-semibold transition ${
+                                  selectedCombatTargetId === target.id
+                                    ? "border-ember-400 bg-ember-500/20 text-ember-100"
+                                    : "border-white/10 bg-white/[0.05] text-slate-100 hover:border-ember-400/60"
+                                }`}
+                                key={target.id}
+                                onClick={() => {
+                                  setSelectedCombatTargetId(target.id);
+                                  setCombatAttackFlowState({
+                                    actorId: activeCombatActor?.id ?? null,
+                                    actionName: combatAttackFlowState.actionName,
+                                    attackFormula:
+                                      combatAttackFlowState.attackFormula,
+                                    damageFormula:
+                                      combatAttackFlowState.damageFormula,
+                                    targetId: target.id,
+                                    attackTotal: null,
+                                    attackHit: null,
+                                    step: "awaitAttackRoll",
+                                  });
+                                }}
+                                type="button"
+                              >
+                                <span className="min-w-0 truncate">
+                                  {target.name}
+                                </span>
+                                <span className="shrink-0 text-[0.62rem] text-slate-300">
+                                  AC {target.ac ?? "?"} | HP{" "}
+                                  {target.currentHp ?? "?"}/{target.maxHp ?? "?"}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      <button
+                        className="mt-2 w-full rounded-md border border-ember-400/55 bg-ember-500 px-3 py-2 text-xs font-black text-ink-950 shadow-glow transition hover:border-ember-200 hover:bg-ember-400 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.06] disabled:text-slate-500 disabled:shadow-none"
+                        disabled={
+                          isBackendTurnResolving ||
+                          (combatRoundState.turnControl?.requiresPlayerAction &&
+                            ((combatAttackFlowState.step === "awaitAttackRoll" &&
+                              (!selectedCombatTarget ||
+                                !combatAttackFlowState.actionName)) ||
+                              (combatAttackFlowState.step === "awaitDamageRoll" &&
+                                combatAttackFlowState.attackHit !== true) ||
+                              (combatAttackFlowState.step !== "awaitAttackRoll" &&
+                                combatAttackFlowState.step !== "awaitDamageRoll" &&
+                                combatAttackFlowState.step !== "turnResolved")))
+                        }
+                        onClick={() => {
+                          if (
+                            activeCombatActor?.kind === "enemy" &&
+                            combatAttackFlowState.step === "enemyResolving"
+                          ) {
+                            resolveLocalEnemyTurn();
+                            return;
+                          }
+
+                          if (
+                            activeCombatActor?.kind === "enemy" &&
+                            combatAttackFlowState.step === "turnResolved"
+                          ) {
+                            endPlayerCombatTurn();
+                            return;
+                          }
+
+                          if (combatRoundState.turnControl?.autoResolvable) {
+                            resolveLocalEnemyTurn();
+                            return;
+                          }
+
+                          if (combatAttackFlowState.step === "awaitAttackRoll") {
+                            rollCombatAttack();
+                            return;
+                          }
+
+                          if (combatAttackFlowState.step === "awaitDamageRoll") {
+                            rollCombatDamage();
+                            return;
+                          }
+
+                          if (combatAttackFlowState.step === "turnResolved") {
+                            endPlayerCombatTurn();
+                          }
+                        }}
+                        type="button"
+                      >
+                        {isBackendTurnResolving
+                          ? "Attack Roll wird ausgewertet..."
+                          : activeCombatActor?.kind === "enemy" &&
+                              combatAttackFlowState.step === "turnResolved"
+                            ? "Weiter zum naechsten Zug"
+                          : activeCombatActor?.kind === "enemy" ||
+                              combatRoundState.turnControl?.autoResolvable
+                            ? "DM-Gegnerzug auswerten"
+                            : combatAttackFlowState.step === "chooseAction"
+                              ? "Erst Aktion waehlen"
+                              : combatAttackFlowState.step === "chooseTarget"
+                                ? "Dann Ziel waehlen"
+                                : combatAttackFlowState.step === "awaitDamageRoll"
+                                  ? `4. Schaden wuerfeln (${combatAttackFlowState.damageFormula})`
+                                  : combatAttackFlowState.step === "turnResolved"
+                                    ? "Zug beenden"
+                                : selectedCombatTarget &&
+                                    combatAttackFlowState.actionName
+                                  ? `3. Angriff wuerfeln (${combatAttackFlowState.attackFormula})`
+                                  : "Combat-Schritt offen"}
+                      </button>
+                      {combatAttackFlowState.attackTotal !== null ? (
+                        <div className="mt-2 rounded-md border border-white/10 bg-black/30 px-2 py-2 text-xs text-slate-200">
+                          <p className="font-black text-slate-100">
+                            Angriffswurf: {combatAttackFlowState.attackTotal}
+                          </p>
+                          <p className="mt-1 font-semibold">
+                            {combatAttackFlowState.attackHit
+                              ? "Treffer. Damage Roll ist jetzt Pflicht."
+                              : "Verfehlt. Kein Damage Roll, Zug kann beendet werden."}
+                          </p>
+                        </div>
+                      ) : null}
+                      {activeCombatActor?.kind === "enemy" &&
+                      combatAttackFlowState.step === "turnResolved" ? (
+                        <div className="mt-2 rounded-md border border-red-400/40 bg-red-500/10 px-2 py-2 text-xs text-red-50">
+                          <p className="font-black text-red-100">
+                            DM-KI: {activeCombatActor.name} greift{" "}
+                            {getCombatActorName(combatAttackFlowState.targetId)} an
+                          </p>
+                          <p className="mt-1 text-slate-300">
+                            Angriffswurf verdeckt.{" "}
+                            {combatAttackFlowState.attackHit
+                              ? "Treffer."
+                              : "Verfehlt."}
+                          </p>
+                          {combatAttackFlowState.attackHit ? (
+                            <p className="mt-1 font-semibold text-red-100">
+                              Sichtbarer Gesamtschaden:{" "}
+                              {combatAttackFlowState.damageTotal ?? 0} | HP jetzt{" "}
+                              {combatAttackFlowState.remainingHp ?? "?"}
+                            </p>
+                          ) : (
+                            <p className="mt-1 font-semibold text-slate-300">
+                              Kein Schaden.
+                            </p>
+                          )}
+                        </div>
+                      ) : null}
+                      {isLastResolutionEnemyAction && lastCombatResolution ? (
+                        <div className="mt-2 rounded-md border border-red-400/35 bg-red-500/10 px-2 py-2 text-xs text-red-50">
+                          <p className="font-black text-red-100">
+                            DM-KI: {getCombatActorName(lastCombatResolution.actorId)} greift{" "}
+                            {getCombatActorName(lastCombatResolution.targetId)} an
+                          </p>
+                          <p className="mt-1 text-slate-300">
+                            Angriffswurf verdeckt.{" "}
+                            {lastCombatResolution.attack?.hit
+                              ? "Treffer."
+                              : "Verfehlt."}
+                          </p>
+                          {lastCombatResolution.attack?.hit ? (
+                            <p className="mt-1 font-semibold text-red-100">
+                              Sichtbarer Gesamtschaden:{" "}
+                              {lastCombatResolution.damage?.total ?? 0} | Helden-HP jetzt{" "}
+                              {lastCombatResolution.hp?.remainingHp ?? "?"}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {isLastResolutionHeroAction && lastCombatResolution ? (
+                        <div className="mt-2 rounded-md border border-emerald-400/35 bg-emerald-500/10 px-2 py-2 text-xs text-emerald-50">
+                          <p className="font-black text-emerald-100">
+                            {getCombatActorName(lastCombatResolution.actorId)} greift{" "}
+                            {getCombatActorName(lastCombatResolution.targetId)} an
+                          </p>
+                          <p className="mt-1 text-slate-300">
+                            2. Attack Roll:{" "}
+                            {lastCombatResolution.attack?.total ?? "?"} gegen AC{" "}
+                            {lastCombatResolution.attack?.targetAc ?? "?"} -{" "}
+                            {lastCombatResolution.attack?.hit
+                              ? "Treffer"
+                              : "Verfehlt"}
+                          </p>
+                          {lastCombatResolution.attack?.hit ? (
+                            <p className="mt-1 font-semibold text-emerald-100">
+                              3. Damage Roll:{" "}
+                              {lastCombatResolution.damage?.total ?? 0} Schaden
+                              {" | "}
+                              Ziel-HP jetzt{" "}
+                              {lastCombatResolution.hp?.remainingHp ?? "?"}
+                            </p>
+                          ) : (
+                            <p className="mt-1 font-semibold text-slate-300">
+                              Kein Damage Roll bei Miss.
+                            </p>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {combatRoundState.round > 0 ? (
+                    <div className="grid gap-1.5">
+                      {combatRoundState.enemies.map((enemy) => (
+                        <div
+                          className="rounded-md border border-red-400/30 bg-red-500/10 px-2 py-2"
+                          key={enemy.id}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="truncate text-xs font-black text-red-100">
+                              {enemy.name}
+                            </p>
+                            <span className="rounded border border-white/10 bg-white/[0.06] px-2 py-1 text-[0.62rem] font-bold text-slate-200">
+                              AC {enemy.ac}
+                            </span>
+                          </div>
+                          <div className="mt-2 h-2 overflow-hidden rounded-full bg-black/45">
+                            <div
+                              className="h-full rounded-full bg-red-400"
+                              style={{
+                                width: `${Math.max(
+                                  0,
+                                  Math.min(
+                                    100,
+                                    (enemy.currentHp / enemy.maxHp) * 100,
+                                  ),
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                          <p className="mt-1 text-[0.68rem] font-semibold text-slate-300">
+                            HP {enemy.currentHp}/{enemy.maxHp} | Speed{" "}
+                            {enemy.speed} ft.
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               {isCharacterSelection ? (
                 <div className="rounded-md border border-white/10 bg-white/[0.05] p-3 text-sm leading-relaxed text-slate-300">
                   Wähle links im Storybild Ryu oder Ayane als Hauptcharakter.
                   Danach erscheinen hier die auswählbaren Aktionen.
                 </div>
               ) : null}
-              {pendingCheck ? (
+              {!isCombatScene && pendingCheck ? (
                 <div className="rounded-md border border-ember-400/40 bg-ember-500/10 px-3 py-2 text-sm">
                   <p className="font-bold text-ember-200">
                     DM wartet auf Wurf
@@ -3140,7 +3948,10 @@ export default function Home() {
                   </p>
                 </div>
               ) : null}
-              {!isCharacterSelection && isLastDialogueLine && isDialogueFullyVisible
+              {!isCombatScene &&
+              !isCharacterSelection &&
+              isLastDialogueLine &&
+              isDialogueFullyVisible
                 ? currentScene.choices.map((choice) => renderChoiceButton(choice))
                 : null}
             </div>
