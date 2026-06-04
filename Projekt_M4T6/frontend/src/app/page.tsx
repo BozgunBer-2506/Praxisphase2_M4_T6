@@ -43,7 +43,9 @@ import {
   getInventoryView,
   narrateWithAiDm,
   resolveCombat,
+  resolveSaveEncounterAttackRoll,
   resolveSaveEncounterAutoTurn,
+  resolveSaveEncounterDamageRoll,
   runSaveInventoryAction,
 } from "@/lib/backendApi";
 
@@ -679,17 +681,18 @@ export default function Home() {
     return actorId;
   };
   const lastCombatResolution = combatRoundState.lastResolution;
+  const lastCombatActorId = lastCombatResolution?.actorId ?? null;
   const isLastResolutionEnemyAction =
-    lastCombatResolution?.actorId !== undefined &&
+    lastCombatActorId !== null &&
     visibleInitiativeOrder.some(
       (actor) =>
-        actor.id === lastCombatResolution.actorId && actor.kind === "enemy",
+        actor.id === lastCombatActorId && actor.kind === "enemy",
     );
   const isLastResolutionHeroAction =
-    lastCombatResolution?.actorId !== undefined &&
+    lastCombatActorId !== null &&
     visibleInitiativeOrder.some(
       (actor) =>
-        actor.id === lastCombatResolution.actorId && actor.kind !== "enemy",
+        actor.id === lastCombatActorId && actor.kind !== "enemy",
     );
   const availableCombatTargets =
     combatRoundState.turnControl?.availableTargets ?? [];
@@ -703,6 +706,15 @@ export default function Home() {
         ? companionSheet
         : null;
   const activeCombatActions = activeCombatSheet?.actions ?? [];
+  const requiresBackendDamageRoll =
+    combatRoundState.turnControl?.requiresDamageRoll === true ||
+    Boolean(
+      combatRoundState.lastResolution?.attack?.hit &&
+        combatAttackFlowState.step === "awaitDamageRoll",
+    );
+  const canResolveBackendDamageRoll =
+    combatAttackFlowState.step === "awaitDamageRoll" &&
+    requiresBackendDamageRoll;
   const combatFlowStepCopy: Record<CombatAttackStep, string> = {
     idle: "Warte auf Kampfrunde.",
     chooseAction: "Waehle eine Waffe oder einen Spell.",
@@ -1519,6 +1531,7 @@ export default function Home() {
         attackTotal: response.frontend_state.lastResolution?.attack?.total ?? null,
         attackHit: response.frontend_state.lastResolution?.attack?.hit ?? null,
         step:
+          activeCombatActor.kind !== "enemy" &&
           response.frontend_state.lastResolution?.attack?.hit === true
             ? "awaitDamageRoll"
             : response.frontend_state.lastResolution
@@ -1536,232 +1549,160 @@ export default function Home() {
       );
     } catch (error) {
       setCombatStatus(
-        "Backend-Auto-Turn nicht erreichbar. Lokaler Turn-Fallback aktiv.",
+        "Backend-Auto-Turn nicht erreichbar. Zug bleibt unveraendert.",
       );
       addGameLog({
         title: "Backend-Auto-Turn fehlgeschlagen",
         detail: error instanceof Error ? error.message : "Unbekannter Fehler",
       });
-      setCombatAttackFlowState(createInitialCombatAttackFlowState());
-      advanceCombatTurn();
     } finally {
       setIsBackendTurnResolving(false);
     }
   };
 
-  const rollCombatFormula = (label: string, formula: string) => {
-    const parsedFormula = parseDiceFormula(formula);
-
-    if (!parsedFormula) {
-      return null;
-    }
-
-    const rolls = Array.from({ length: parsedFormula.diceCount }, () =>
-      Math.floor(Math.random() * parsedFormula.diceType) + 1,
-    );
-    const selectedRoll = rolls.reduce((sum, roll) => sum + roll, 0);
-    const result: RollResult = {
-      diceType: parsedFormula.diceType,
-      rolls,
-      selectedRoll,
-      modifier: parsedFormula.modifier,
-      total: selectedRoll + parsedFormula.modifier,
-      mode: "normal",
-      label,
-    };
-
-    setRollResult(result);
-    setRollAnimationKey((currentKey) => currentKey + 1);
-    addGameLog({
-      title: label,
-      detail: `Wurf ${rolls.join(" + ")} + Mod ${parsedFormula.modifier} = ${result.total}`,
-      total: result.total,
-    });
-
-    return result;
-  };
-
-  const rollCombatAttack = () => {
+  const rollCombatAttack = async () => {
     if (
       !activeCombatActor ||
       !selectedCombatTarget ||
       !combatAttackFlowState.actionName ||
-      !combatAttackFlowState.attackFormula
+      isBackendTurnResolving
     ) {
       return;
     }
 
-    const result = rollCombatFormula(
-      `${activeCombatActor.name} ${combatAttackFlowState.actionName} Angriff`,
-      combatAttackFlowState.attackFormula,
-    );
+    setIsBackendTurnResolving(true);
+    setCombatStatus("Backend wuerfelt den Angriff gegen die Ziel-AC...");
 
-    if (!result) {
-      return;
+    try {
+      await syncBackendSave();
+      const action: EncounterAutoTurnAction = {
+        action_type: "attack",
+        actor_id:
+          activeCombatActor.kind === "player"
+            ? toBackendCharacterId(activeCharacter?.id ?? "ryu")
+            : toBackendCharacterId(activeNpc?.id ?? "ayane"),
+        target_id: selectedCombatTarget.id,
+      };
+      const response = await resolveSaveEncounterAttackRoll(
+        BACKEND_SLOT_NAME,
+        action,
+      );
+      const attack = response.frontend_state.lastResolution?.attack ?? null;
+      const targetName = getCombatActorName(
+        response.frontend_state.lastResolution?.targetId ??
+          selectedCombatTarget.id,
+      );
+      const requiresDamageRoll =
+        response.frontend_state.turnControl?.requiresDamageRoll === true ||
+        Boolean(response.frontend_state.pendingDamage);
+
+      setInventoryState(response.state.inventory);
+      applyFrontendEncounterState(response.frontend_state);
+      setCombatAttackFlowState((currentState) => ({
+        ...currentState,
+        actorId:
+          response.frontend_state.lastResolution?.actorId ??
+          response.frontend_state.activeActorId,
+        targetId:
+          response.frontend_state.lastResolution?.targetId ??
+          selectedCombatTarget.id,
+        attackTotal: attack?.total ?? null,
+        attackHit: attack?.hit ?? null,
+        damageTotal: null,
+        remainingHp: null,
+        step: requiresDamageRoll ? "awaitDamageRoll" : "turnResolved",
+      }));
+      setCombatStatus(
+        attack
+          ? `${attack.total ?? "?"} gegen AC ${attack.targetAc ?? "?"}: ${
+              attack.hit
+                ? "Treffer. Backend wartet auf Damage Roll."
+                : "Verfehlt. Kein Damage Roll."
+            }`
+          : "Backend hat den Angriff verarbeitet.",
+      );
+      setDmMessages((messages) => [
+        ...messages,
+        {
+          id: createId(),
+          sender: "DM",
+          text: attack?.hit
+            ? `${activeCombatActor.name} trifft ${targetName} mit ${combatAttackFlowState.actionName}. Bitte wuerfle jetzt den Schaden.`
+            : `${activeCombatActor.name} verfehlt ${targetName} mit ${combatAttackFlowState.actionName}. Der Zug kann beendet werden.`,
+        },
+      ]);
+    } catch (error) {
+      setCombatStatus("Backend-Attack-Roll nicht erreichbar.");
+      addGameLog({
+        title: "Backend-Attack-Roll fehlgeschlagen",
+        detail: error instanceof Error ? error.message : "Unbekannter Fehler",
+      });
+    } finally {
+      setIsBackendTurnResolving(false);
     }
-
-    const targetAc = selectedCombatTarget.ac ?? 10;
-    const attackHit = result.total >= targetAc;
-    const hitText = attackHit
-      ? `${activeCombatActor.name} trifft ${selectedCombatTarget.name} mit ${combatAttackFlowState.actionName}.`
-      : `${activeCombatActor.name} verfehlt ${selectedCombatTarget.name} mit ${combatAttackFlowState.actionName}.`;
-
-    setCombatAttackFlowState((currentState) => ({
-      ...currentState,
-      attackTotal: result.total,
-      attackHit,
-      step: attackHit ? "awaitDamageRoll" : "turnResolved",
-    }));
-    setCombatStatus(
-      `${result.total} gegen AC ${targetAc}: ${
-        attackHit ? "Treffer. Schadenwurf erforderlich." : "Verfehlt. Kein Damage Roll."
-      }`,
-    );
-    setDmMessages((messages) => [
-      ...messages,
-      {
-        id: createId(),
-        sender: "DM",
-        text: attackHit
-          ? `${hitText} Bitte wuerfle jetzt den Schaden.`
-          : `${hitText} Der Zug kann beendet werden.`,
-      },
-    ]);
   };
 
-  const rollCombatDamage = () => {
+  const rollCombatDamage = async () => {
     if (
       !activeCombatActor ||
       !combatAttackFlowState.targetId ||
       !combatAttackFlowState.actionName ||
-      !combatAttackFlowState.damageFormula ||
-      combatAttackFlowState.attackHit !== true
+      !canResolveBackendDamageRoll ||
+      isBackendTurnResolving
     ) {
       return;
     }
 
-    const result = rollCombatFormula(
-      `${activeCombatActor.name} ${combatAttackFlowState.actionName} Schaden`,
-      combatAttackFlowState.damageFormula,
-    );
+    setIsBackendTurnResolving(true);
+    setCombatStatus("Backend wuerfelt den Schaden und aktualisiert HP...");
 
-    if (!result) {
-      return;
-    }
+    try {
+      const response = await resolveSaveEncounterDamageRoll(BACKEND_SLOT_NAME);
+      const resolution = response.frontend_state.lastResolution;
+      const damageTotal = resolution?.damage?.total ?? null;
+      const remainingHp = resolution?.hp?.remainingHp ?? null;
+      const targetName = getCombatActorName(
+        resolution?.targetId ?? combatAttackFlowState.targetId,
+      );
 
-    let targetName = "Ziel";
-    let remainingHp = 0;
-
-    setCombatRoundState((currentState) => {
-      const nextEnemies = currentState.enemies.map((enemy) => {
-        if (enemy.id !== combatAttackFlowState.targetId) {
-          return enemy;
-        }
-
-        targetName = enemy.name;
-        remainingHp = Math.max(0, enemy.currentHp - result.total);
-
-        return {
-          ...enemy,
-          currentHp: remainingHp,
-          conditions:
-            remainingHp <= 0
-              ? Array.from(new Set([...enemy.conditions, "Besiegt"]))
-              : enemy.conditions,
-        };
-      });
-
-      return {
+      setInventoryState(response.state.inventory);
+      applyFrontendEncounterState(response.frontend_state);
+      setSelectedCombatTargetId(null);
+      setCombatAttackFlowState((currentState) => ({
         ...currentState,
-        enemies: nextEnemies,
-        awaitingRoll: null,
-      };
-    });
-    setCombatAttackFlowState((currentState) => ({
-      ...currentState,
-      damageTotal: result.total,
-      remainingHp,
-      step: "turnResolved",
-    }));
-    setCombatStatus(
-      `${combatAttackFlowState.actionName} verursacht ${result.total} Schaden. ${targetName}: HP ${remainingHp}.`,
-    );
-    setDmMessages((messages) => [
-      ...messages,
-      {
-        id: createId(),
-        sender: "DM",
-        text: `${activeCombatActor.name} verursacht ${result.total} Schaden mit ${combatAttackFlowState.actionName}. ${targetName} hat noch ${remainingHp} HP.`,
-      },
-    ]);
-  };
-
-  const resolveLocalEnemyTurn = () => {
-    if (!activeCombatActor || activeCombatActor.kind !== "enemy") {
-      return;
-    }
-
-    const heroTargets = [activeCharacter, activeNpc].filter(
-      (character): character is NonNullable<typeof character> => Boolean(character),
-    );
-    const aliveHeroTargets = heroTargets.filter(
-      (character) => runtimeStats[character.id].currentHp > 0,
-    );
-    const target =
-      aliveHeroTargets[Math.floor(Math.random() * aliveHeroTargets.length)] ??
-      heroTargets[0];
-
-    if (!target) {
-      return;
-    }
-
-    const targetStats = runtimeStats[target.id];
-    const attackRoll = Math.floor(Math.random() * 20) + 1;
-    const attackModifier = 4;
-    const attackTotal = attackRoll + attackModifier;
-    const hit = attackTotal >= targetStats.ac;
-    const damageRoll = hit ? Math.floor(Math.random() * 6) + 1 + 2 : 0;
-    const remainingHp = hit
-      ? Math.max(0, targetStats.currentHp - damageRoll)
-      : targetStats.currentHp;
-
-    if (hit) {
-      setRuntimeStats((currentStats) => ({
-        ...currentStats,
-        [target.id]: {
-          ...currentStats[target.id],
-          currentHp: remainingHp,
-        },
+        actorId: resolution?.actorId ?? response.frontend_state.activeActorId,
+        targetId: resolution?.targetId ?? currentState.targetId,
+        damageTotal,
+        remainingHp,
+        step: "turnResolved",
       }));
+      setCombatStatus(
+        damageTotal !== null
+          ? `${combatAttackFlowState.actionName} verursacht ${damageTotal} Schaden. ${targetName}: HP ${remainingHp ?? "?"}.`
+          : "Backend hat den Schaden verarbeitet.",
+      );
+      setDmMessages((messages) => [
+        ...messages,
+        {
+          id: createId(),
+          sender: "DM",
+          text:
+            damageTotal !== null
+              ? `${activeCombatActor.name} verursacht ${damageTotal} Schaden mit ${combatAttackFlowState.actionName}. ${targetName} hat noch ${
+                  remainingHp ?? "?"
+                } HP.`
+            : "Der Schaden wurde vom Backend verarbeitet.",
+        },
+      ]);
+    } catch (error) {
+      setCombatStatus("Backend-Damage-Roll nicht erreichbar.");
+      addGameLog({
+        title: "Backend-Damage-Roll fehlgeschlagen",
+        detail: error instanceof Error ? error.message : "Unbekannter Fehler",
+      });
+    } finally {
+      setIsBackendTurnResolving(false);
     }
-
-    setCombatAttackFlowState({
-      actorId: activeCombatActor.id,
-      actionName: "Verdeckter Angriff",
-      attackFormula: "verdeckt",
-      damageFormula: hit ? "1d6+2" : null,
-      targetId: target.id,
-      attackTotal: null,
-      attackHit: hit,
-      damageTotal: hit ? damageRoll : 0,
-      remainingHp,
-      step: "turnResolved",
-    });
-    setCombatStatus(
-      hit
-        ? `${activeCombatActor.name} trifft ${target.name}. ${target.name} erhaelt ${damageRoll} Schaden und hat noch ${remainingHp} HP.`
-        : `${activeCombatActor.name} verfehlt ${target.name}. Kein Schaden.`,
-    );
-    setDmMessages((messages) => [
-      ...messages,
-      {
-        id: createId(),
-        sender: "DM",
-        text: hit
-          ? `${activeCombatActor.name} greift ${target.name} an. Der Angriffswurf bleibt verdeckt. Treffer. ${target.name} erhaelt ${damageRoll} Schaden und hat noch ${remainingHp} HP.`
-          : `${activeCombatActor.name} greift ${target.name} an. Der Angriffswurf bleibt verdeckt. Verfehlt.`,
-      },
-    ]);
   };
 
   const endPlayerCombatTurn = () => {
@@ -3272,8 +3213,8 @@ export default function Home() {
                     Kampfrunde {combatRoundState.round}
                   </p>
                   <p className="mt-1 text-sm font-black text-slate-100">
-                    {activeCombatActor
-                      ? `${activeCombatActor.name} ist am Zug`
+                    {activeCombatActor?.name !== undefined
+                      ? `${activeCombatActor?.name} ist am Zug`
                       : "Zug wird vorbereitet"}
                   </p>
                   <p className="mt-1 text-[0.7rem] font-semibold text-slate-300">
@@ -3282,9 +3223,9 @@ export default function Home() {
                   </p>
                   {combatRoundState.turnControl ? (
                     <p className="mt-1 text-[0.68rem] font-semibold text-slate-400">
-                      {combatRoundState.turnControl.requiresPlayerAction
+                      {combatRoundState.turnControl?.requiresPlayerAction
                         ? "Hero-Turn: Angriff bereit"
-                        : combatRoundState.turnControl.autoResolvable
+                        : combatRoundState.turnControl?.autoResolvable
                           ? "Enemy-Turn: Backend auto-resolve"
                           : "Turn wird vom Backend geprueft"}
                     </p>
@@ -3737,7 +3678,7 @@ export default function Home() {
                               (!selectedCombatTarget ||
                                 !combatAttackFlowState.actionName)) ||
                               (combatAttackFlowState.step === "awaitDamageRoll" &&
-                                combatAttackFlowState.attackHit !== true) ||
+                                !canResolveBackendDamageRoll) ||
                               (combatAttackFlowState.step !== "awaitAttackRoll" &&
                                 combatAttackFlowState.step !== "awaitDamageRoll" &&
                                 combatAttackFlowState.step !== "turnResolved")))
@@ -3747,7 +3688,7 @@ export default function Home() {
                             activeCombatActor?.kind === "enemy" &&
                             combatAttackFlowState.step === "enemyResolving"
                           ) {
-                            resolveLocalEnemyTurn();
+                            void resolveBackendCombatTurn();
                             return;
                           }
 
@@ -3760,17 +3701,17 @@ export default function Home() {
                           }
 
                           if (combatRoundState.turnControl?.autoResolvable) {
-                            resolveLocalEnemyTurn();
+                            void resolveBackendCombatTurn();
                             return;
                           }
 
                           if (combatAttackFlowState.step === "awaitAttackRoll") {
-                            rollCombatAttack();
+                            void rollCombatAttack();
                             return;
                           }
 
                           if (combatAttackFlowState.step === "awaitDamageRoll") {
-                            rollCombatDamage();
+                            void rollCombatDamage();
                             return;
                           }
 
@@ -3793,7 +3734,9 @@ export default function Home() {
                               : combatAttackFlowState.step === "chooseTarget"
                                 ? "Dann Ziel waehlen"
                                 : combatAttackFlowState.step === "awaitDamageRoll"
-                                  ? `4. Schaden wuerfeln (${combatAttackFlowState.damageFormula})`
+                                  ? requiresBackendDamageRoll
+                                    ? "4. Backend-Damage-Roll ausloesen"
+                                    : "Kein Damage Roll offen"
                                   : combatAttackFlowState.step === "turnResolved"
                                     ? "Zug beenden"
                                 : selectedCombatTarget &&
@@ -3807,9 +3750,9 @@ export default function Home() {
                             Angriffswurf: {combatAttackFlowState.attackTotal}
                           </p>
                           <p className="mt-1 font-semibold">
-                            {combatAttackFlowState.attackHit
-                              ? "Treffer. Damage Roll ist jetzt Pflicht."
-                              : "Verfehlt. Kein Damage Roll, Zug kann beendet werden."}
+                            {requiresBackendDamageRoll
+                              ? "Backend fordert jetzt den Damage Roll an."
+                              : "Kein Damage Roll offen, Zug kann beendet werden."}
                           </p>
                         </div>
                       ) : null}
