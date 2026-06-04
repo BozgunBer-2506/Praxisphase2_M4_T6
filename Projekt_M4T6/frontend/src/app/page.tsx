@@ -30,6 +30,10 @@ import {
 } from "@/data/scenes";
 import {
   type CombatResolveResponse,
+  type EncounterAutoTurnAction,
+  type EncounterState,
+  type FrontendEncounterActor,
+  type FrontendEncounterState,
   type HudEvent,
   type InventoryAction,
   type InventoryStateItem,
@@ -39,6 +43,7 @@ import {
   getInventoryView,
   narrateWithAiDm,
   resolveCombat,
+  resolveSaveEncounterAutoTurn,
   runSaveInventoryAction,
 } from "@/lib/backendApi";
 
@@ -57,6 +62,18 @@ const createId = () =>
 
 const toBackendCharacterId = (characterId: CharacterId) =>
   characterId === "ryu" ? "ayane" : "johan";
+
+const toFrontendCharacterId = (characterId: string): CharacterId | null => {
+  if (characterId === "ayane") {
+    return "ryu";
+  }
+
+  if (characterId === "johan") {
+    return "ayane";
+  }
+
+  return null;
+};
 
 const parseDiceFormula = (formula: string) => {
   const normalizedFormula = formula.replace(/\s/g, "");
@@ -237,6 +254,7 @@ type RuntimeStats = {
   currentHp: number;
   maxHp: number;
   ac: number;
+  speed: number;
 };
 
 type RollMode = "normal" | "advantage" | "disadvantage";
@@ -278,6 +296,63 @@ type InitiativeActor = {
   kind: "player" | "companion" | "enemy";
   total?: number;
 };
+
+type EnemyCombatState = {
+  id: string;
+  name: string;
+  currentHp: number;
+  maxHp: number;
+  ac: number;
+  speed: number;
+  conditions: string[];
+};
+
+type CombatRoundState = {
+  encounterId: string;
+  round: number;
+  activeActorId: string | null;
+  turnIndex: number;
+  initiativeOrder: InitiativeActor[];
+  enemies: EnemyCombatState[];
+  awaitingRoll: "attack" | "damage" | "save" | "initiative" | null;
+  lastBackendEvents: HudEvent[];
+  turnControl: FrontendEncounterState["turnControl"] | null;
+  lastResolution: FrontendEncounterState["lastResolution"];
+};
+
+const createInitialCombatEnemies = (): EnemyCombatState[] => [
+  {
+    id: "shadow-raider-1",
+    name: "Schattenräuber A",
+    currentHp: 16,
+    maxHp: 16,
+    ac: 14,
+    speed: 30,
+    conditions: [],
+  },
+  {
+    id: "shadow-raider-2",
+    name: "Schattenräuber B",
+    currentHp: 16,
+    maxHp: 16,
+    ac: 14,
+    speed: 30,
+    conditions: [],
+  },
+];
+
+const createInitialCombatRoundState = (): CombatRoundState => ({
+  encounterId: "inner-trade-route-ambush",
+  round: 0,
+  activeActorId: null,
+  turnIndex: 0,
+  initiativeOrder: [],
+  enemies: createInitialCombatEnemies(),
+  awaitingRoll: null,
+  lastBackendEvents: [],
+  turnControl: null,
+  lastResolution: null,
+});
 
 const findScene = (sceneId: string) =>
   scenes.find((scene) => scene.id === sceneId) ?? scenes[0];
@@ -366,6 +441,10 @@ export default function Home() {
     Partial<Record<CharacterId, RollMode>>
   >({});
   const [initiativeOrder, setInitiativeOrder] = useState<InitiativeActor[]>([]);
+  const [combatRoundState, setCombatRoundState] = useState<CombatRoundState>(
+    createInitialCombatRoundState,
+  );
+  const [isBackendTurnResolving, setIsBackendTurnResolving] = useState(false);
   const [initiativeStatus, setInitiativeStatus] = useState(
     "Initiative offen: Ryu und Ayane müssen würfeln.",
   );
@@ -375,11 +454,13 @@ export default function Home() {
         currentHp: characters.ryu.stats.hp,
         maxHp: characters.ryu.stats.hp,
         ac: characters.ryu.stats.ac,
+        speed: characters.ryu.stats.speed,
       },
       ayane: {
         currentHp: characters.ayane.stats.hp,
         maxHp: characters.ayane.stats.hp,
         ac: characters.ayane.stats.ac,
+        speed: characters.ayane.stats.speed,
       },
     }),
   );
@@ -475,7 +556,94 @@ export default function Home() {
   const isCombatScene =
     currentScene.id.startsWith("kampf-") ||
     currentScene.id === "hinterhalt-handelsroute";
+  const visibleInitiativeOrder =
+    combatRoundState.initiativeOrder.length > 0
+      ? combatRoundState.initiativeOrder
+      : initiativeOrder;
+  const activeCombatActor = visibleInitiativeOrder.find(
+    (actor) => actor.id === combatRoundState.activeActorId,
+  );
   const actorName = activeCharacter?.name ?? "Der Charakter";
+  const backendEncounterState = useMemo<EncounterState | null>(() => {
+    if (combatRoundState.round === 0 || visibleInitiativeOrder.length === 0) {
+      return null;
+    }
+
+    const mainCharacter = activeCharacter ?? characters.ryu;
+    const companion = activeNpc ?? characters.ayane;
+    const mainRuntime = runtimeStats[mainCharacter.id];
+    const companionRuntime = runtimeStats[companion.id];
+    const heroParticipants = [
+      {
+        participant_id: toBackendCharacterId(mainCharacter.id),
+        side: "heroes" as const,
+        current_hp: mainRuntime.currentHp,
+        max_hp: mainRuntime.maxHp,
+        defeated: mainRuntime.currentHp <= 0,
+        armor_class: mainRuntime.ac,
+        speed: mainRuntime.speed,
+      },
+      {
+        participant_id: toBackendCharacterId(companion.id),
+        side: "heroes" as const,
+        current_hp: companionRuntime.currentHp,
+        max_hp: companionRuntime.maxHp,
+        defeated: companionRuntime.currentHp <= 0,
+        armor_class: companionRuntime.ac,
+        speed: companionRuntime.speed,
+      },
+    ];
+    const enemyParticipants = combatRoundState.enemies.map((enemy) => ({
+      participant_id: enemy.id,
+      side: "enemies" as const,
+      current_hp: enemy.currentHp,
+      max_hp: enemy.maxHp,
+      defeated: enemy.currentHp <= 0,
+      armor_class: enemy.ac,
+      speed: enemy.speed,
+    }));
+    const toBackendActorId = (actor: InitiativeActor) => {
+      if (actor.kind === "player") {
+        return toBackendCharacterId(mainCharacter.id);
+      }
+
+      if (actor.kind === "companion") {
+        return toBackendCharacterId(companion.id);
+      }
+
+      return actor.id;
+    };
+    const activeActor = visibleInitiativeOrder.find(
+      (actor) => actor.id === combatRoundState.activeActorId,
+    );
+
+    return {
+      round_number: combatRoundState.round,
+      turn_index: combatRoundState.turnIndex,
+      active_participant_id:
+        activeActor !== undefined
+          ? toBackendActorId(activeActor)
+          : toBackendActorId(visibleInitiativeOrder[0]),
+      initiative_order: visibleInitiativeOrder.map((actor, index) => ({
+        participant_id: toBackendActorId(actor),
+        roll: actor.total ?? 0,
+        modifier: 0,
+        total: actor.total ?? visibleInitiativeOrder.length - index,
+        nat20: false,
+        nat1: false,
+      })),
+      participants: [...heroParticipants, ...enemyParticipants],
+      combat_finished: combatRoundState.enemies.every(
+        (enemy) => enemy.currentHp <= 0,
+      ),
+    };
+  }, [
+    activeCharacter,
+    activeNpc,
+    combatRoundState,
+    runtimeStats,
+    visibleInitiativeOrder,
+  ]);
   const backendSaveState = useMemo<SaveGameState>(() => {
     const mainCharacter = activeCharacter ?? characters.ryu;
     const companion = activeNpc ?? characters.ayane;
@@ -499,8 +667,15 @@ export default function Home() {
         egg_stolen: true,
       },
       inventory: inventoryState,
+      encounter: backendEncounterState,
     };
-  }, [activeCharacter, activeNpc, inventoryState, runtimeStats]);
+  }, [
+    activeCharacter,
+    activeNpc,
+    backendEncounterState,
+    inventoryState,
+    runtimeStats,
+  ]);
   const pendingSkillNames = new Set(
     pendingCheck?.checks
       .map((check) => check.skill)
@@ -668,6 +843,75 @@ export default function Home() {
           : visibleEvent.label ?? visibleEvent.type,
     });
     setRollAnimationKey((currentKey) => currentKey + 1);
+  };
+
+  const mapEncounterActorKind = (
+    actor: FrontendEncounterActor,
+  ): InitiativeActor["kind"] => {
+    if (actor.kind === "enemy" || actor.side === "enemies") {
+      return "enemy";
+    }
+
+    return actor.id === toBackendCharacterId(selectedCharacterId ?? "ryu")
+      ? "player"
+      : "companion";
+  };
+
+  const applyFrontendEncounterState = (
+    frontendState: FrontendEncounterState,
+  ) => {
+    const initiativeActors: InitiativeActor[] =
+      frontendState.initiativeOrder.map((actor) => ({
+        id: actor.id,
+        name: actor.name,
+        kind: mapEncounterActorKind(actor),
+        total: actor.total ?? undefined,
+      }));
+    const enemies: EnemyCombatState[] = frontendState.enemies.map((enemy) => ({
+      id: enemy.id,
+      name: enemy.name,
+      currentHp: enemy.currentHp ?? 0,
+      maxHp: enemy.maxHp ?? 1,
+      ac: enemy.ac ?? 10,
+      speed: enemy.speed ?? 30,
+      conditions: enemy.defeated ? ["Besiegt"] : [],
+    }));
+
+    setInitiativeOrder(initiativeActors);
+    setCombatRoundState((currentState) => ({
+      ...currentState,
+      round: frontendState.round,
+      activeActorId: frontendState.activeActorId,
+      turnIndex: frontendState.turnIndex,
+      initiativeOrder: initiativeActors,
+      enemies,
+      awaitingRoll: null,
+      lastBackendEvents: frontendState.lastBackendEvents,
+      turnControl: frontendState.turnControl,
+      lastResolution: frontendState.lastResolution,
+    }));
+    setRuntimeStats((currentStats) => {
+      const nextStats = { ...currentStats };
+
+      frontendState.heroes.forEach((hero) => {
+        const frontendCharacterId = toFrontendCharacterId(hero.id);
+
+        if (!frontendCharacterId) {
+          return;
+        }
+
+        nextStats[frontendCharacterId] = {
+          ...nextStats[frontendCharacterId],
+          currentHp: hero.currentHp ?? nextStats[frontendCharacterId].currentHp,
+          maxHp: hero.maxHp ?? nextStats[frontendCharacterId].maxHp,
+          speed: hero.speed ?? nextStats[frontendCharacterId].speed,
+          ac: hero.ac ?? nextStats[frontendCharacterId].ac,
+        };
+      });
+
+      return nextStats;
+    });
+    applyHudEvents(frontendState.hudEvents);
   };
 
   const syncInventoryView = async (nextInventory = inventoryState) => {
@@ -858,6 +1102,7 @@ export default function Home() {
 
       setInitiativeRolls({});
       setInitiativeOrder([]);
+      setCombatRoundState(createInitialCombatRoundState());
       setInitiativeStatus(
         advantageNames.length > 0
           ? `Initiative offen: Ryu und Ayane müssen würfeln. ${advantageNames.join(
@@ -909,6 +1154,80 @@ export default function Home() {
     }
 
     goToScene(choice.nextSceneId);
+  };
+
+  const advanceCombatTurn = () => {
+    setCombatRoundState((currentState) => {
+      const order = currentState.initiativeOrder;
+
+      if (order.length === 0 || currentState.round === 0) {
+        return currentState;
+      }
+
+      const nextTurnIndex = (currentState.turnIndex + 1) % order.length;
+      const isNewRound = nextTurnIndex === 0;
+
+      return {
+        ...currentState,
+        round: isNewRound ? currentState.round + 1 : currentState.round,
+        activeActorId: order[nextTurnIndex]?.id ?? null,
+        turnIndex: nextTurnIndex,
+        awaitingRoll: null,
+      };
+    });
+  };
+
+  const resolveBackendCombatTurn = async () => {
+    if (!activeCombatActor || isBackendTurnResolving) {
+      return;
+    }
+
+    setIsBackendTurnResolving(true);
+    setCombatStatus("Backend loest den aktuellen Kampfrunden-Zug auf...");
+
+    try {
+      await syncBackendSave();
+      const target =
+        combatRoundState.turnControl?.availableTargets[0] ??
+        combatRoundState.enemies.find((enemy) => enemy.currentHp > 0);
+      const action: EncounterAutoTurnAction | undefined =
+        activeCombatActor.kind === "enemy"
+          ? undefined
+          : target
+            ? {
+                action_type: "attack",
+                actor_id:
+                  activeCombatActor.kind === "player"
+                    ? toBackendCharacterId(activeCharacter?.id ?? "ryu")
+                    : toBackendCharacterId(activeNpc?.id ?? "ayane"),
+                target_id: target.id,
+              }
+            : undefined;
+
+      const response = await resolveSaveEncounterAutoTurn(
+        BACKEND_SLOT_NAME,
+        action,
+      );
+
+      setInventoryState(response.state.inventory);
+      applyFrontendEncounterState(response.frontend_state);
+      setCombatStatus(
+        response.frontend_state.lastResolution
+          ? "Backend-Zug aufgeloest. HUD und Kampfrunde wurden aktualisiert."
+          : "Backend-Zug verarbeitet. Kampfrunde wurde aktualisiert.",
+      );
+    } catch (error) {
+      setCombatStatus(
+        "Backend-Auto-Turn nicht erreichbar. Lokaler Turn-Fallback aktiv.",
+      );
+      addGameLog({
+        title: "Backend-Auto-Turn fehlgeschlagen",
+        detail: error instanceof Error ? error.message : "Unbekannter Fehler",
+      });
+      advanceCombatTurn();
+    } finally {
+      setIsBackendTurnResolving(false);
+    }
   };
 
   const continueDialogue = () => {
@@ -1095,6 +1414,14 @@ export default function Home() {
       );
 
       setInitiativeOrder(combatInitiativeOrder);
+      setCombatRoundState((currentState) => ({
+        ...currentState,
+        round: 1,
+        activeActorId: combatInitiativeOrder[0]?.id ?? null,
+        turnIndex: 0,
+        initiativeOrder: combatInitiativeOrder,
+        awaitingRoll: null,
+      }));
       setInitiativeStatus(`Initiative steht: ${visibleInitiativeOrder}.`);
       addGameLog({
         title: "Initiative vollständig",
@@ -2391,16 +2718,16 @@ export default function Home() {
               backgroundImage: `linear-gradient(180deg,rgba(17,24,39,0.22),rgba(3,4,10,0.94)),url('${currentScene.imageUrl}')`,
             }}
           >
-            {isCombatScene && initiativeOrder.length > 0 ? (
+            {isCombatScene && visibleInitiativeOrder.length > 0 ? (
               <div className="absolute left-3 right-3 top-3 z-20 rounded-md border border-white/10 bg-ink-950/85 px-2 py-2 shadow-2xl backdrop-blur">
                 <div className="flex items-center gap-2 overflow-x-auto">
                   <span className="shrink-0 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-ember-300">
                     Initiative
                   </span>
-                  {initiativeOrder.map((actor, index) => (
+                  {visibleInitiativeOrder.map((actor, index) => (
                     <div
                       className={`flex shrink-0 items-center gap-2 rounded-md border px-2 py-1 text-xs font-bold ${
-                        index === 0
+                        actor.id === combatRoundState.activeActorId
                           ? "border-ember-400 bg-ember-500 text-ink-950"
                           : actor.kind === "enemy"
                             ? "border-red-400/40 bg-red-500/10 text-red-100"
@@ -2417,6 +2744,78 @@ export default function Home() {
                       ) : (
                         <span className="text-[0.65rem] opacity-70">DM</span>
                       )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {isCombatScene && combatRoundState.round > 0 ? (
+              <div className="absolute left-3 right-3 top-14 z-20 grid gap-2 rounded-md border border-white/10 bg-ink-950/80 p-2 shadow-2xl backdrop-blur lg:grid-cols-[12rem_minmax(0,1fr)]">
+                <div className="rounded-md border border-ember-400/35 bg-ember-500/10 px-3 py-2">
+                  <p className="text-[0.62rem] font-bold uppercase tracking-[0.18em] text-ember-300">
+                    Kampfrunde {combatRoundState.round}
+                  </p>
+                  <p className="mt-1 text-sm font-black text-slate-100">
+                    {activeCombatActor
+                      ? `${activeCombatActor.name} ist am Zug`
+                      : "Zug wird vorbereitet"}
+                  </p>
+                  <p className="mt-1 text-[0.7rem] font-semibold text-slate-300">
+                    Zug {combatRoundState.turnIndex + 1}/
+                    {visibleInitiativeOrder.length}
+                  </p>
+                  {combatRoundState.turnControl ? (
+                    <p className="mt-1 text-[0.68rem] font-semibold text-slate-400">
+                      {combatRoundState.turnControl.requiresPlayerAction
+                        ? "Hero-Turn: Angriff bereit"
+                        : combatRoundState.turnControl.autoResolvable
+                          ? "Enemy-Turn: Backend auto-resolve"
+                          : "Turn wird vom Backend geprueft"}
+                    </p>
+                  ) : null}
+                  <button
+                    className="mt-2 w-full rounded-md border border-ember-400/45 bg-ember-500/15 px-3 py-2 text-xs font-black text-ember-100 transition hover:border-ember-300 hover:bg-ember-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={isBackendTurnResolving}
+                    onClick={resolveBackendCombatTurn}
+                    type="button"
+                  >
+                    {isBackendTurnResolving
+                      ? "Backend rechnet..."
+                      : combatRoundState.turnControl?.autoResolvable
+                        ? "Enemy-Turn aufloesen"
+                        : "Aktion abschliessen"}
+                  </button>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {combatRoundState.enemies.map((enemy) => (
+                    <div
+                      className="rounded-md border border-red-400/30 bg-red-500/10 px-3 py-2"
+                      key={enemy.id}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate text-sm font-black text-red-100">
+                          {enemy.name}
+                        </p>
+                        <span className="rounded border border-white/10 bg-white/[0.06] px-2 py-1 text-[0.62rem] font-bold text-slate-200">
+                          AC {enemy.ac}
+                        </span>
+                      </div>
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-black/45">
+                        <div
+                          className="h-full rounded-full bg-red-400"
+                          style={{
+                            width: `${Math.max(
+                              0,
+                              Math.min(100, (enemy.currentHp / enemy.maxHp) * 100),
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="mt-1 text-[0.7rem] font-semibold text-slate-300">
+                        HP {enemy.currentHp}/{enemy.maxHp} · Speed {enemy.speed} ft.
+                      </p>
                     </div>
                   ))}
                 </div>
