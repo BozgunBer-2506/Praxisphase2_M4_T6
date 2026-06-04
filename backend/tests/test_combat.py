@@ -4,6 +4,8 @@ from combat import (
     advance_turn,
     create_combat_state,
     resolve_auto_turn,
+    resolve_encounter_attack_roll,
+    resolve_encounter_damage_roll,
     resolve_encounter_turn,
     resolve_enemy_turn,
     resolve_player_turn,
@@ -164,6 +166,100 @@ def test_resolve_encounter_turn_rejects_inactive_actor():
 
     with pytest.raises(ValueError, match="active_participant_id"):
         resolve_encounter_turn(state, action, roller=sequence_roller([12, 4]))
+
+
+def test_resolve_encounter_attack_roll_creates_pending_damage_on_hit_without_hp_change():
+    participants = [
+        {"participant_id": "ayane", "side": "heroes", "current_hp": 28, "max_hp": 28},
+        {"participant_id": "bandit", "side": "enemies", "current_hp": 11, "max_hp": 11},
+        {"participant_id": "johan", "side": "heroes", "current_hp": 24, "max_hp": 24},
+    ]
+    state = create_combat_state(participants, INITIATIVE_ORDER)
+    action = {
+        "action_type": "attack",
+        "actor_id": "ayane",
+        "target_id": "bandit",
+        "attack_modifier": 5,
+        "target_ac": 14,
+        "damage_dice_count": 1,
+        "damage_die_sides": 8,
+        "damage_modifier": 3,
+    }
+
+    result = resolve_encounter_attack_roll(state, action, roller=sequence_roller([12]))
+
+    assert result["rules_result"]["attack"]["hit"] is True
+    assert result["rules_result"]["damage"] is None
+    assert result["rules_result"]["hp"] is None
+    assert result["rules_result"]["awaiting_damage_roll"] is True
+    assert result["state"]["active_participant_id"] == "ayane"
+    assert result["state"]["pending_damage"] == {
+        "actor_id": "ayane",
+        "target_id": "bandit",
+        "damage_dice_count": 1,
+        "damage_die_sides": 8,
+        "damage_modifier": 3,
+        "critical": False,
+        "target_current_hp": 11,
+    }
+    bandit = next(participant for participant in result["state"]["participants"] if participant["participant_id"] == "bandit")
+    assert bandit["current_hp"] == 11
+
+
+def test_resolve_encounter_attack_roll_advances_turn_on_miss_without_pending_damage():
+    participants = [
+        {"participant_id": "ayane", "side": "heroes", "current_hp": 28, "max_hp": 28},
+        {"participant_id": "bandit", "side": "enemies", "current_hp": 11, "max_hp": 11},
+        {"participant_id": "johan", "side": "heroes", "current_hp": 24, "max_hp": 24},
+    ]
+    state = create_combat_state(participants, INITIATIVE_ORDER)
+    action = {
+        "action_type": "attack",
+        "actor_id": "ayane",
+        "target_id": "bandit",
+        "attack_modifier": 1,
+        "target_ac": 20,
+        "damage_dice_count": 1,
+        "damage_die_sides": 8,
+        "damage_modifier": 3,
+    }
+
+    result = resolve_encounter_attack_roll(state, action, roller=sequence_roller([2]))
+
+    assert result["rules_result"]["attack"]["hit"] is False
+    assert result["rules_result"]["awaiting_damage_roll"] is False
+    assert result["state"]["pending_damage"] is None
+    assert result["state"]["active_participant_id"] == "bandit"
+    bandit = next(participant for participant in result["state"]["participants"] if participant["participant_id"] == "bandit")
+    assert bandit["current_hp"] == 11
+
+
+def test_resolve_encounter_damage_roll_consumes_pending_damage_and_advances_turn():
+    participants = [
+        {"participant_id": "ayane", "side": "heroes", "current_hp": 28, "max_hp": 28},
+        {"participant_id": "bandit", "side": "enemies", "current_hp": 11, "max_hp": 11},
+        {"participant_id": "johan", "side": "heroes", "current_hp": 24, "max_hp": 24},
+    ]
+    state = create_combat_state(participants, INITIATIVE_ORDER)
+    state["pending_damage"] = {
+        "actor_id": "ayane",
+        "target_id": "bandit",
+        "damage_dice_count": 1,
+        "damage_die_sides": 8,
+        "damage_modifier": 3,
+        "critical": False,
+        "target_current_hp": 11,
+    }
+
+    result = resolve_encounter_damage_roll(state, roller=sequence_roller([4]))
+
+    assert result["rules_result"]["damage"]["rolls"] == [4]
+    assert result["rules_result"]["damage"]["total"] == 7
+    assert result["rules_result"]["hp"]["remaining_hp"] == 4
+    assert result["state"]["pending_damage"] is None
+    assert result["state"]["active_participant_id"] == "bandit"
+    bandit = next(participant for participant in result["state"]["participants"] if participant["participant_id"] == "bandit")
+    assert bandit["current_hp"] == 4
 
 
 def test_resolve_enemy_turn_targets_first_living_hero_and_advances_turn():

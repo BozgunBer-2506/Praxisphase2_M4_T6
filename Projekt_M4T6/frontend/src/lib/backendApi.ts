@@ -139,9 +139,24 @@ export type FrontendEncounterActor = {
 
 export type FrontendEncounterTurnControl = {
   requiresPlayerAction: boolean;
+  requiresDamageRoll?: boolean;
   autoResolvable: boolean;
   allowedActions: string[];
   availableTargets: FrontendEncounterActor[];
+};
+
+export type FrontendEncounterPendingDamage = {
+  actorId?: string | null;
+  actor_id?: string | null;
+  targetId?: string | null;
+  target_id?: string | null;
+  damageDiceCount?: number | null;
+  damage_dice_count?: number | null;
+  damageDieSides?: number | null;
+  damage_die_sides?: number | null;
+  damageModifier?: number | null;
+  damage_modifier?: number | null;
+  critical?: boolean;
 };
 
 export type FrontendEncounterResolution = {
@@ -186,9 +201,10 @@ export type FrontendEncounterState = {
   hudEvents: HudEvent[];
   lastBackendEvents: HudEvent[];
   lastResolution: FrontendEncounterResolution | null;
+  pendingDamage?: FrontendEncounterPendingDamage | null;
 };
 
-export type SaveEncounterAutoTurnResolveResponse = {
+export type SaveEncounterResolveResponse = {
   slot_name: string;
   state: SaveGameState & { encounter?: Record<string, unknown> };
   rules_result: Record<string, unknown>;
@@ -196,6 +212,10 @@ export type SaveEncounterAutoTurnResolveResponse = {
   turn_events: HudEvent[];
   frontend_state: FrontendEncounterState;
 };
+
+export type SaveEncounterAutoTurnResolveResponse = SaveEncounterResolveResponse;
+export type SaveEncounterAttackRollResolveResponse = SaveEncounterResolveResponse;
+export type SaveEncounterDamageRollResolveResponse = SaveEncounterResolveResponse;
 
 type RequestOptions = {
   method?: "GET" | "POST" | "DELETE";
@@ -294,6 +314,29 @@ export async function resolveSaveEncounterAutoTurn(
     {
       method: "POST",
       body: action ? { action } : {},
+    },
+  );
+}
+
+export async function resolveSaveEncounterAttackRoll(
+  slotName: string,
+  action: EncounterAutoTurnAction,
+) {
+  return request<SaveEncounterAttackRollResolveResponse>(
+    `/saves/${encodeURIComponent(slotName)}/encounter/attack-roll/resolve`,
+    {
+      method: "POST",
+      body: { action },
+    },
+  );
+}
+
+export async function resolveSaveEncounterDamageRoll(slotName: string) {
+  return request<SaveEncounterDamageRollResolveResponse>(
+    `/saves/${encodeURIComponent(slotName)}/encounter/damage-roll/resolve`,
+    {
+      method: "POST",
+      body: {},
     },
   );
 }

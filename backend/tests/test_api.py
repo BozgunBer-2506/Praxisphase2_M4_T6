@@ -188,8 +188,8 @@ def test_combat_state_next_advances_turn():
             {
                 "participant_id": "bandit",
                 "side": "enemies",
-                "current_hp": 11,
-                "max_hp": 11,
+                "current_hp": 20,
+                "max_hp": 20,
                 "defeated": False,
             },
         ],
@@ -619,8 +619,8 @@ def test_encounter_enemy_turn_resolve_rejects_hero_active_turn():
             {
                 "participant_id": "bandit",
                 "side": "enemies",
-                "current_hp": 11,
-                "max_hp": 11,
+                "current_hp": 20,
+                "max_hp": 20,
                 "defeated": False,
             },
         ],
@@ -755,6 +755,152 @@ def test_encounter_player_turn_resolve_rejects_enemy_actor():
 
     assert response.status_code == 422
     assert "not a hero" in response.json()["detail"]
+
+
+def test_encounter_attack_roll_resolve_accepts_minimal_action_without_hp_change():
+    payload = {
+        "state": {
+            "round_number": 1,
+            "turn_index": 0,
+            "active_participant_id": "ayane",
+            "initiative_order": [
+                {
+                    "participant_id": "ayane",
+                    "roll": 15,
+                    "modifier": 2,
+                    "total": 17,
+                    "nat20": False,
+                    "nat1": False,
+                },
+                {
+                    "participant_id": "bandit",
+                    "roll": 12,
+                    "modifier": 1,
+                    "total": 13,
+                    "nat20": False,
+                    "nat1": False,
+                },
+            ],
+            "participants": [
+                {
+                    "participant_id": "ayane",
+                    "side": "heroes",
+                    "current_hp": 28,
+                    "max_hp": 28,
+                    "defeated": False,
+                    "attack": {
+                        "attack_modifier": 20,
+                        "damage_dice_count": 1,
+                        "damage_die_sides": 8,
+                        "damage_modifier": 4,
+                    },
+                },
+                {
+                    "participant_id": "bandit",
+                    "side": "enemies",
+                    "current_hp": 11,
+                    "max_hp": 11,
+                    "defeated": False,
+                    "armor_class": 1,
+                },
+            ],
+            "combat_finished": False,
+        },
+        "action": {
+            "action_type": "attack",
+            "actor_id": "ayane",
+            "target_id": "bandit",
+        },
+    }
+
+    response = client.post("/encounter/attack-roll/resolve", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["rules_result"]["actor_id"] == "ayane"
+    assert body["rules_result"]["target_id"] == "bandit"
+    assert body["rules_result"]["attack"]["modifier"] == 20
+    assert body["rules_result"]["attack"]["target_ac"] == 1
+    assert body["rules_result"]["damage"] is None
+    assert body["rules_result"]["hp"] is None
+    assert body["rules_result"]["awaiting_damage_roll"] is True
+    assert body["state"]["pending_damage"]["actor_id"] == "ayane"
+    assert body["state"]["pending_damage"]["target_id"] == "bandit"
+    assert body["frontend_state"]["pendingDamage"]["target_id"] == "bandit"
+    assert body["frontend_state"]["turnControl"]["requiresPlayerAction"] is True
+    assert body["frontend_state"]["turnControl"]["requiresDamageRoll"] is True
+    assert body["frontend_state"]["turnControl"]["autoResolvable"] is False
+    assert body["frontend_state"]["turnControl"]["allowedActions"] == ["damage_roll"]
+    bandit = next(participant for participant in body["state"]["participants"] if participant["participant_id"] == "bandit")
+    assert bandit["current_hp"] == 11
+    assert [event["type"] for event in body["hud_events"]] == ["attack_roll"]
+
+
+def test_encounter_damage_roll_resolve_requires_pending_damage_and_changes_hp():
+    payload = {
+        "round_number": 1,
+        "turn_index": 0,
+        "active_participant_id": "ayane",
+        "initiative_order": [
+            {
+                "participant_id": "ayane",
+                "roll": 15,
+                "modifier": 2,
+                "total": 17,
+                "nat20": False,
+                "nat1": False,
+            },
+            {
+                "participant_id": "bandit",
+                "roll": 12,
+                "modifier": 1,
+                "total": 13,
+                "nat20": False,
+                "nat1": False,
+            },
+        ],
+        "participants": [
+            {
+                "participant_id": "ayane",
+                "side": "heroes",
+                "current_hp": 28,
+                "max_hp": 28,
+                "defeated": False,
+            },
+            {
+                "participant_id": "bandit",
+                "side": "enemies",
+                "current_hp": 20,
+                "max_hp": 20,
+                "defeated": False,
+            },
+        ],
+        "combat_finished": False,
+        "pending_damage": {
+            "actor_id": "ayane",
+            "target_id": "bandit",
+            "damage_dice_count": 1,
+            "damage_die_sides": 8,
+            "damage_modifier": 4,
+            "critical": False,
+            "target_current_hp": 20,
+        },
+    }
+
+    response = client.post("/encounter/damage-roll/resolve", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["rules_result"]["actor_id"] == "ayane"
+    assert body["rules_result"]["target_id"] == "bandit"
+    assert body["rules_result"]["attack"] is None
+    assert body["rules_result"]["damage"]["total"] >= 5
+    assert body["rules_result"]["hp"]["previous_hp"] == 20
+    assert body["rules_result"]["hp"]["remaining_hp"] < 20
+    assert body["state"]["pending_damage"] is None
+    assert body["state"]["active_participant_id"] == "bandit"
+    assert body["frontend_state"]["pendingDamage"] is None
+    assert [event["type"] for event in body["hud_events"]] == ["damage", "hp_change"]
 
 
 def test_encounter_auto_turn_resolve_routes_hero_action():
@@ -1325,6 +1471,144 @@ def test_save_encounter_auto_turn_resolve_persists_enemy_without_action():
             assert persisted_log.actor_id == "bandit"
             assert persisted_log.target_id == "ayane"
             assert persisted_log.turn_events[0]["type"] == "encounter_enemy_target_selected"
+        finally:
+            verify_db.close()
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_save_encounter_two_step_attack_and_damage_roll_persist_pending_damage():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    main.app.dependency_overrides[main.get_db] = override_get_db
+    try:
+        save_payload = {
+            "slot_name": "two-step-combat",
+            "character_id": "ayane",
+            "scene_number": 1,
+            "state": {
+                "main_character": {
+                    "character_id": "ayane",
+                    "current_hp": 28,
+                    "max_hp": 28,
+                },
+                "story_flags": {},
+                "inventory": [],
+                "encounter": {
+                    "round_number": 1,
+                    "turn_index": 0,
+                    "active_participant_id": "ayane",
+                    "initiative_order": [
+                        {
+                            "participant_id": "ayane",
+                            "roll": 15,
+                            "modifier": 2,
+                            "total": 17,
+                            "nat20": False,
+                            "nat1": False,
+                        },
+                        {
+                            "participant_id": "bandit",
+                            "roll": 12,
+                            "modifier": 1,
+                            "total": 13,
+                            "nat20": False,
+                            "nat1": False,
+                        },
+                    ],
+                    "participants": [
+                        {
+                            "participant_id": "ayane",
+                            "side": "heroes",
+                            "current_hp": 28,
+                            "max_hp": 28,
+                            "defeated": False,
+                            "attack": {
+                                "attack_modifier": 20,
+                                "damage_dice_count": 1,
+                                "damage_die_sides": 8,
+                                "damage_modifier": 4,
+                            },
+                        },
+                        {
+                            "participant_id": "bandit",
+                            "side": "enemies",
+                            "current_hp": 20,
+                            "max_hp": 20,
+                            "defeated": False,
+                            "armor_class": 1,
+                        },
+                    ],
+                    "combat_finished": False,
+                },
+            },
+        }
+
+        create_response = client.post("/saves", json=save_payload)
+        attack_response = client.post(
+            "/saves/two-step-combat/encounter/attack-roll/resolve",
+            json={
+                "action": {
+                    "action_type": "attack",
+                    "actor_id": "ayane",
+                    "target_id": "bandit",
+                }
+            },
+        )
+        after_attack_response = client.get("/saves/two-step-combat")
+        damage_response = client.post("/saves/two-step-combat/encounter/damage-roll/resolve")
+        after_damage_response = client.get("/saves/two-step-combat")
+
+        assert create_response.status_code == 200
+        assert attack_response.status_code == 200
+        attack_body = attack_response.json()
+        assert attack_body["rules_result"]["attack"]["hit"] is True
+        assert attack_body["rules_result"]["damage"] is None
+        assert attack_body["state"]["encounter"]["pending_damage"]["actor_id"] == "ayane"
+        assert attack_body["frontend_state"]["pendingDamage"]["target_id"] == "bandit"
+        assert [event["type"] for event in attack_body["hud_events"]] == ["attack_roll"]
+        assert after_attack_response.json()["state"]["encounter"]["pending_damage"]["target_id"] == "bandit"
+
+        assert damage_response.status_code == 200
+        damage_body = damage_response.json()
+        assert damage_body["rules_result"]["attack"] is None
+        assert damage_body["rules_result"]["damage"]["total"] >= 5
+        assert damage_body["rules_result"]["hp"]["previous_hp"] == 20
+        assert damage_body["rules_result"]["hp"]["remaining_hp"] < 20
+        assert damage_body["state"]["encounter"]["pending_damage"] is None
+        assert damage_body["state"]["encounter"]["active_participant_id"] == "bandit"
+        assert damage_body["frontend_state"]["pendingDamage"] is None
+        assert damage_body["frontend_state"]["turnControl"]["requiresDamageRoll"] is False
+        assert damage_body["frontend_state"]["turnControl"]["autoResolvable"] is True
+        assert [event["type"] for event in damage_body["hud_events"]] == ["damage", "hp_change"]
+        saved_encounter = after_damage_response.json()["state"]["encounter"]
+        assert saved_encounter["pending_damage"] is None
+        bandit = next(
+            participant
+            for participant in saved_encounter["participants"]
+            if participant["participant_id"] == "bandit"
+        )
+        assert bandit["current_hp"] < 20
+
+        verify_db = TestingSessionLocal()
+        try:
+            logs = verify_db.query(EncounterTurnLog).order_by(EncounterTurnLog.id).all()
+            assert [log.action_type for log in logs] == ["attack_roll", "damage_roll"]
+            assert logs[0].rules_result["attack"]["hit"] is True
+            assert logs[1].rules_result["damage"]["total"] >= 5
         finally:
             verify_db.close()
     finally:

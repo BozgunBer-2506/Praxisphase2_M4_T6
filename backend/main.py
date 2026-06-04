@@ -10,9 +10,11 @@ from characters import CHARACTERS
 from combat import (
     advance_turn,
     create_combat_state,
+    resolve_encounter_damage_roll,
     resolve_auto_turn,
     resolve_encounter_turn,
     resolve_enemy_turn,
+    resolve_player_attack_roll,
     resolve_player_turn,
 )
 from database import Base, engine, get_db
@@ -98,7 +100,13 @@ def build_frontend_encounter_state(
         "heroes": heroes,
         "enemies": enemies,
         "combatFinished": state.get("combat_finished", False),
-        "turnControl": build_frontend_turn_control(active_actor, heroes, enemies),
+        "pendingDamage": state.get("pending_damage"),
+        "turnControl": build_frontend_turn_control(
+            active_actor,
+            heroes,
+            enemies,
+            state.get("pending_damage"),
+        ),
         "hudEvents": hud_events,
         "lastBackendEvents": hud_events,
         "lastResolution": build_frontend_resolution(rules_result),
@@ -109,10 +117,21 @@ def build_frontend_turn_control(
     active_actor: dict | None,
     heroes: list[dict],
     enemies: list[dict],
+    pending_damage: dict | None = None,
 ) -> dict:
+    if pending_damage:
+        return {
+            "requiresPlayerAction": True,
+            "requiresDamageRoll": True,
+            "autoResolvable": False,
+            "allowedActions": ["damage_roll"],
+            "availableTargets": [],
+        }
+
     if not active_actor or active_actor.get("defeated"):
         return {
             "requiresPlayerAction": False,
+            "requiresDamageRoll": False,
             "autoResolvable": False,
             "allowedActions": [],
             "availableTargets": [],
@@ -122,6 +141,7 @@ def build_frontend_turn_control(
     if active_side == "heroes":
         return {
             "requiresPlayerAction": True,
+            "requiresDamageRoll": False,
             "autoResolvable": False,
             "allowedActions": ["attack"],
             "availableTargets": [enemy for enemy in enemies if not enemy.get("defeated")],
@@ -129,6 +149,7 @@ def build_frontend_turn_control(
     if active_side == "enemies":
         return {
             "requiresPlayerAction": False,
+            "requiresDamageRoll": False,
             "autoResolvable": True,
             "allowedActions": [],
             "availableTargets": [hero for hero in heroes if not hero.get("defeated")],
@@ -136,6 +157,7 @@ def build_frontend_turn_control(
 
     return {
         "requiresPlayerAction": False,
+        "requiresDamageRoll": False,
         "autoResolvable": False,
         "allowedActions": [],
         "availableTargets": [],
@@ -276,6 +298,7 @@ class CombatState(BaseModel):
     initiative_order: list[InitiativeEntryResponse] = Field(min_length=1)
     participants: list[CombatParticipantState] = Field(min_length=1)
     combat_finished: bool
+    pending_damage: dict | None = None
 
 
 class EncounterAttackAction(BaseModel):
@@ -560,6 +583,37 @@ def encounter_player_turn_resolve(request: EncounterPlayerTurnResolveRequest):
     }
 
 
+@app.post("/encounter/attack-roll/resolve")
+def encounter_attack_roll_resolve(request: EncounterPlayerTurnResolveRequest):
+    try:
+        result = resolve_player_attack_roll(
+            state=request.state.model_dump(),
+            action=request.action.model_dump(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    hud_events = build_hud_events(result["rules_result"])
+    return {
+        **result,
+        "hud_events": hud_events,
+        "frontend_state": build_frontend_encounter_state(result["state"], hud_events, result["rules_result"]),
+    }
+
+
+@app.post("/encounter/damage-roll/resolve")
+def encounter_damage_roll_resolve(state: CombatState):
+    try:
+        result = resolve_encounter_damage_roll(state=state.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    hud_events = build_hud_events(result["rules_result"])
+    return {
+        **result,
+        "hud_events": hud_events,
+        "frontend_state": build_frontend_encounter_state(result["state"], hud_events, result["rules_result"]),
+    }
+
+
 @app.post("/encounter/auto-turn/resolve")
 def encounter_auto_turn_resolve(request: EncounterAutoTurnResolveRequest):
     try:
@@ -651,6 +705,92 @@ def save_encounter_auto_turn_resolve(
     encounter = upsert_encounter_from_save_state(db, save_game)
     if encounter:
         create_encounter_turn_log(db, encounter, persisted_result)
+    db.commit()
+    db.refresh(save_game)
+    return {
+        "slot_name": save_game.slot_name,
+        "state": save_game.state,
+        "rules_result": result["rules_result"],
+        "turn_events": result["turn_events"],
+        "hud_events": persisted_result["hud_events"],
+        "frontend_state": build_frontend_encounter_state(
+            result["state"],
+            persisted_result["hud_events"],
+            result["rules_result"],
+        ),
+    }
+
+
+@app.post("/saves/{slot_name}/encounter/attack-roll/resolve")
+def save_encounter_attack_roll_resolve(
+    slot_name: str,
+    request: SaveEncounterPlayerTurnResolveRequest,
+    db: Session = Depends(get_db),
+):
+    save_game = db.query(SaveGame).filter(SaveGame.slot_name == slot_name).first()
+    if not save_game:
+        raise HTTPException(status_code=404, detail="Save game not found")
+    encounter_state = save_game.state.get("encounter")
+    if not encounter_state:
+        raise HTTPException(status_code=422, detail="Save game has no active encounter")
+
+    try:
+        result = resolve_player_attack_roll(
+            state=encounter_state,
+            action=request.action.model_dump(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    next_save_state = dict(save_game.state)
+    next_save_state["encounter"] = result["state"]
+    save_game.state = next_save_state
+    flag_modified(save_game, "state")
+    persisted_result = {**result, "hud_events": build_hud_events(result["rules_result"])}
+    encounter = upsert_encounter_from_save_state(db, save_game)
+    if encounter:
+        create_encounter_turn_log(db, encounter, persisted_result, action_type="attack_roll")
+    db.commit()
+    db.refresh(save_game)
+    return {
+        "slot_name": save_game.slot_name,
+        "state": save_game.state,
+        "rules_result": result["rules_result"],
+        "turn_events": result["turn_events"],
+        "hud_events": persisted_result["hud_events"],
+        "frontend_state": build_frontend_encounter_state(
+            result["state"],
+            persisted_result["hud_events"],
+            result["rules_result"],
+        ),
+    }
+
+
+@app.post("/saves/{slot_name}/encounter/damage-roll/resolve")
+def save_encounter_damage_roll_resolve(
+    slot_name: str,
+    db: Session = Depends(get_db),
+):
+    save_game = db.query(SaveGame).filter(SaveGame.slot_name == slot_name).first()
+    if not save_game:
+        raise HTTPException(status_code=404, detail="Save game not found")
+    encounter_state = save_game.state.get("encounter")
+    if not encounter_state:
+        raise HTTPException(status_code=422, detail="Save game has no active encounter")
+
+    try:
+        result = resolve_encounter_damage_roll(state=encounter_state)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    next_save_state = dict(save_game.state)
+    next_save_state["encounter"] = result["state"]
+    save_game.state = next_save_state
+    flag_modified(save_game, "state")
+    persisted_result = {**result, "hud_events": build_hud_events(result["rules_result"])}
+    encounter = upsert_encounter_from_save_state(db, save_game)
+    if encounter:
+        create_encounter_turn_log(db, encounter, persisted_result, action_type="damage_roll")
     db.commit()
     db.refresh(save_game)
     return {
