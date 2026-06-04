@@ -30,6 +30,10 @@ import {
 } from "@/data/scenes";
 import {
   type CombatResolveResponse,
+  type EncounterAutoTurnAction,
+  type EncounterState,
+  type FrontendEncounterActor,
+  type FrontendEncounterState,
   type HudEvent,
   type InventoryAction,
   type InventoryStateItem,
@@ -39,6 +43,7 @@ import {
   getInventoryView,
   narrateWithAiDm,
   resolveCombat,
+  resolveSaveEncounterAutoTurn,
   runSaveInventoryAction,
 } from "@/lib/backendApi";
 
@@ -57,6 +62,18 @@ const createId = () =>
 
 const toBackendCharacterId = (characterId: CharacterId) =>
   characterId === "ryu" ? "ayane" : "johan";
+
+const toFrontendCharacterId = (characterId: string): CharacterId | null => {
+  if (characterId === "ayane") {
+    return "ryu";
+  }
+
+  if (characterId === "johan") {
+    return "ayane";
+  }
+
+  return null;
+};
 
 const parseDiceFormula = (formula: string) => {
   const normalizedFormula = formula.replace(/\s/g, "");
@@ -237,6 +254,7 @@ type RuntimeStats = {
   currentHp: number;
   maxHp: number;
   ac: number;
+  speed: number;
 };
 
 type RollMode = "normal" | "advantage" | "disadvantage";
@@ -279,6 +297,107 @@ type InitiativeActor = {
   total?: number;
 };
 
+type EnemyCombatState = {
+  id: string;
+  name: string;
+  currentHp: number;
+  maxHp: number;
+  ac: number;
+  speed: number;
+  conditions: string[];
+};
+
+type CombatRoundState = {
+  encounterId: string;
+  round: number;
+  activeActorId: string | null;
+  turnIndex: number;
+  initiativeOrder: InitiativeActor[];
+  enemies: EnemyCombatState[];
+  awaitingRoll: "attack" | "damage" | "save" | "initiative" | null;
+  lastBackendEvents: HudEvent[];
+  turnControl: FrontendEncounterState["turnControl"] | null;
+  lastResolution: FrontendEncounterState["lastResolution"];
+};
+
+type CombatAttackStep =
+  | "idle"
+  | "chooseAction"
+  | "chooseTarget"
+  | "awaitAttackRoll"
+  | "awaitDamageRoll"
+  | "turnResolved"
+  | "enemyResolving";
+
+type CombatAttackFlowState = {
+  step: CombatAttackStep;
+  actorId: string | null;
+  actionName: string | null;
+  attackFormula: string | null;
+  damageFormula: string | null;
+  targetId: string | null;
+  attackTotal: number | null;
+  attackHit: boolean | null;
+  damageTotal?: number | null;
+  remainingHp?: number | null;
+};
+
+const createInitialCombatEnemies = (): EnemyCombatState[] => [
+  {
+    id: "shadow-raider-1",
+    name: "Schattenräuber A",
+    currentHp: 16,
+    maxHp: 16,
+    ac: 14,
+    speed: 30,
+    conditions: [],
+  },
+  {
+    id: "shadow-raider-2",
+    name: "Schattenräuber B",
+    currentHp: 16,
+    maxHp: 16,
+    ac: 14,
+    speed: 30,
+    conditions: [],
+  },
+];
+
+const createInitialCombatRoundState = (): CombatRoundState => ({
+  encounterId: "inner-trade-route-ambush",
+  round: 0,
+  activeActorId: null,
+  turnIndex: 0,
+  initiativeOrder: [],
+  enemies: createInitialCombatEnemies(),
+  awaitingRoll: null,
+  lastBackendEvents: [],
+  turnControl: null,
+  lastResolution: null,
+});
+
+const createInitialCombatAttackFlowState = (): CombatAttackFlowState => ({
+  step: "idle",
+  actorId: null,
+  actionName: null,
+  attackFormula: null,
+  damageFormula: null,
+  targetId: null,
+  attackTotal: null,
+  attackHit: null,
+  damageTotal: null,
+  remainingHp: null,
+});
+
+const createCombatAttackFlowStateForActor = (
+  actor: InitiativeActor | undefined,
+  round: number,
+): CombatAttackFlowState => ({
+  ...createInitialCombatAttackFlowState(),
+  actorId: actor?.id ?? null,
+  step: round <= 0 ? "idle" : actor?.kind === "enemy" ? "enemyResolving" : "chooseAction",
+});
+
 const findScene = (sceneId: string) =>
   scenes.find((scene) => scene.id === sceneId) ?? scenes[0];
 
@@ -307,6 +426,61 @@ const readSaveStates = (): SaveState[] => {
   } catch {
     return [];
   }
+};
+
+const readLastSaveState = (): SaveState | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    return JSON.parse(window.localStorage.getItem(LAST_SAVE_KEY) ?? "null");
+  } catch {
+    return null;
+  }
+};
+
+const isValidSaveState = (saveState: SaveState | null) =>
+  Boolean(
+    saveState &&
+      scenes.some((scene) => scene.id === saveState.sceneId) &&
+      (saveState.characterId === "ryu" || saveState.characterId === "ayane"),
+  );
+
+const findActiveLastSaveState = (): SaveState | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const lastSaveState = readLastSaveState();
+  const saveStates = readSaveStates();
+  const matchingSaveState =
+    lastSaveState && isValidSaveState(lastSaveState)
+      ? saveStates.find((saveState) => saveState.id === lastSaveState.id)
+      : null;
+
+  if (!matchingSaveState) {
+    window.localStorage.removeItem(LAST_SAVE_KEY);
+    return null;
+  }
+
+  return matchingSaveState;
+};
+
+const findMatchingSaveState = (
+  sceneId: string | null,
+  characterId: CharacterId | null,
+) => {
+  if (!sceneId || !characterId) {
+    return null;
+  }
+
+  return (
+    readSaveStates().find(
+      (saveState) =>
+        saveState.sceneId === sceneId && saveState.characterId === characterId,
+    ) ?? null
+  );
 };
 
 export default function Home() {
@@ -354,6 +528,15 @@ export default function Home() {
     Partial<Record<CharacterId, RollMode>>
   >({});
   const [initiativeOrder, setInitiativeOrder] = useState<InitiativeActor[]>([]);
+  const [combatRoundState, setCombatRoundState] = useState<CombatRoundState>(
+    createInitialCombatRoundState,
+  );
+  const [combatAttackFlowState, setCombatAttackFlowState] =
+    useState<CombatAttackFlowState>(createInitialCombatAttackFlowState);
+  const [selectedCombatTargetId, setSelectedCombatTargetId] = useState<string | null>(
+    null,
+  );
+  const [isBackendTurnResolving, setIsBackendTurnResolving] = useState(false);
   const [initiativeStatus, setInitiativeStatus] = useState(
     "Initiative offen: Ryu und Ayane müssen würfeln.",
   );
@@ -363,16 +546,19 @@ export default function Home() {
         currentHp: characters.ryu.stats.hp,
         maxHp: characters.ryu.stats.hp,
         ac: characters.ryu.stats.ac,
+        speed: characters.ryu.stats.speed,
       },
       ayane: {
         currentHp: characters.ayane.stats.hp,
         maxHp: characters.ayane.stats.hp,
         ac: characters.ayane.stats.ac,
+        speed: characters.ayane.stats.speed,
       },
     }),
   );
   const [hudEvents, setHudEvents] = useState<HudEvent[]>([]);
   const [pendingCheck, setPendingCheck] = useState<PendingCheck | null>(null);
+  const [openChoiceCheckId, setOpenChoiceCheckId] = useState<string | null>(null);
   const [gameLog, setGameLog] = useState<GameLogEntry[]>([
     {
       id: "log-start",
@@ -400,16 +586,33 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     const sceneParam = params.get("scene");
     const characterParam = params.get("character") as CharacterId | null;
+    const hasValidSceneParam =
+      Boolean(sceneParam) && scenes.some((scene) => scene.id === sceneParam);
+    const hasValidCharacterParam =
+      characterParam === "ryu" || characterParam === "ayane";
 
-    if (sceneParam && scenes.some((scene) => scene.id === sceneParam)) {
-      setCurrentSceneId(sceneParam);
+    if (hasValidSceneParam || hasValidCharacterParam) {
+      const matchingSaveState =
+        hasValidSceneParam && hasValidCharacterParam
+          ? findMatchingSaveState(sceneParam, characterParam)
+          : null;
+
+      if (matchingSaveState) {
+        setCurrentSceneId(matchingSaveState.sceneId);
+        setSelectedCharacterId(matchingSaveState.characterId);
+      } else {
+        window.history.replaceState(null, "", window.location.pathname);
+        window.localStorage.removeItem(LAST_SAVE_KEY);
+      }
+
+      return;
     }
 
-    if (
-      characterParam &&
-      (characterParam === "ryu" || characterParam === "ayane")
-    ) {
-      setSelectedCharacterId(characterParam);
+    const lastSaveState = findActiveLastSaveState();
+
+    if (lastSaveState) {
+      setCurrentSceneId(lastSaveState.sceneId);
+      setSelectedCharacterId(lastSaveState.characterId);
     }
   }, []);
 
@@ -447,7 +650,148 @@ export default function Home() {
   const isCombatScene =
     currentScene.id.startsWith("kampf-") ||
     currentScene.id === "hinterhalt-handelsroute";
+  const visibleInitiativeOrder =
+    combatRoundState.initiativeOrder.length > 0
+      ? combatRoundState.initiativeOrder
+      : initiativeOrder;
+  const activeCombatActor = visibleInitiativeOrder.find(
+    (actor) => actor.id === combatRoundState.activeActorId,
+  );
   const actorName = activeCharacter?.name ?? "Der Charakter";
+  const getCombatActorName = (actorId?: string | null) => {
+    if (!actorId) {
+      return "Unbekannt";
+    }
+
+    const initiativeActor = visibleInitiativeOrder.find(
+      (actor) => actor.id === actorId,
+    );
+    const frontendCharacterId = toFrontendCharacterId(actorId);
+
+    if (initiativeActor) {
+      return initiativeActor.name;
+    }
+
+    if (frontendCharacterId) {
+      return characters[frontendCharacterId].name;
+    }
+
+    return actorId;
+  };
+  const lastCombatResolution = combatRoundState.lastResolution;
+  const isLastResolutionEnemyAction =
+    lastCombatResolution?.actorId !== undefined &&
+    visibleInitiativeOrder.some(
+      (actor) =>
+        actor.id === lastCombatResolution.actorId && actor.kind === "enemy",
+    );
+  const isLastResolutionHeroAction =
+    lastCombatResolution?.actorId !== undefined &&
+    visibleInitiativeOrder.some(
+      (actor) =>
+        actor.id === lastCombatResolution.actorId && actor.kind !== "enemy",
+    );
+  const availableCombatTargets =
+    combatRoundState.turnControl?.availableTargets ?? [];
+  const selectedCombatTarget =
+    availableCombatTargets.find((target) => target.id === selectedCombatTargetId) ??
+    null;
+  const activeCombatSheet =
+    activeCombatActor?.kind === "player"
+      ? activeSheet
+      : activeCombatActor?.kind === "companion"
+        ? companionSheet
+        : null;
+  const activeCombatActions = activeCombatSheet?.actions ?? [];
+  const combatFlowStepCopy: Record<CombatAttackStep, string> = {
+    idle: "Warte auf Kampfrunde.",
+    chooseAction: "Waehle eine Waffe oder einen Spell.",
+    chooseTarget: "Waehle ein Ziel fuer diese Aktion.",
+    awaitAttackRoll: "Angriffswurf erforderlich. Der Zug pausiert bis zum Hit Roll.",
+    awaitDamageRoll: "Treffer. Schadenwurf erforderlich, bevor der Zug endet.",
+    turnResolved: "Aktion ausgewertet. Der Zug kann beendet werden.",
+    enemyResolving: "DM-KI fuehrt den Gegnerzug verdeckt aus.",
+  };
+  const backendEncounterState = useMemo<EncounterState | null>(() => {
+    if (combatRoundState.round === 0 || visibleInitiativeOrder.length === 0) {
+      return null;
+    }
+
+    const mainCharacter = activeCharacter ?? characters.ryu;
+    const companion = activeNpc ?? characters.ayane;
+    const mainRuntime = runtimeStats[mainCharacter.id];
+    const companionRuntime = runtimeStats[companion.id];
+    const heroParticipants = [
+      {
+        participant_id: toBackendCharacterId(mainCharacter.id),
+        side: "heroes" as const,
+        current_hp: mainRuntime.currentHp,
+        max_hp: mainRuntime.maxHp,
+        defeated: mainRuntime.currentHp <= 0,
+        armor_class: mainRuntime.ac,
+        speed: mainRuntime.speed,
+      },
+      {
+        participant_id: toBackendCharacterId(companion.id),
+        side: "heroes" as const,
+        current_hp: companionRuntime.currentHp,
+        max_hp: companionRuntime.maxHp,
+        defeated: companionRuntime.currentHp <= 0,
+        armor_class: companionRuntime.ac,
+        speed: companionRuntime.speed,
+      },
+    ];
+    const enemyParticipants = combatRoundState.enemies.map((enemy) => ({
+      participant_id: enemy.id,
+      side: "enemies" as const,
+      current_hp: enemy.currentHp,
+      max_hp: enemy.maxHp,
+      defeated: enemy.currentHp <= 0,
+      armor_class: enemy.ac,
+      speed: enemy.speed,
+    }));
+    const toBackendActorId = (actor: InitiativeActor) => {
+      if (actor.kind === "player") {
+        return toBackendCharacterId(mainCharacter.id);
+      }
+
+      if (actor.kind === "companion") {
+        return toBackendCharacterId(companion.id);
+      }
+
+      return actor.id;
+    };
+    const activeActor = visibleInitiativeOrder.find(
+      (actor) => actor.id === combatRoundState.activeActorId,
+    );
+
+    return {
+      round_number: combatRoundState.round,
+      turn_index: combatRoundState.turnIndex,
+      active_participant_id:
+        activeActor !== undefined
+          ? toBackendActorId(activeActor)
+          : toBackendActorId(visibleInitiativeOrder[0]),
+      initiative_order: visibleInitiativeOrder.map((actor, index) => ({
+        participant_id: toBackendActorId(actor),
+        roll: actor.total ?? 0,
+        modifier: 0,
+        total: actor.total ?? visibleInitiativeOrder.length - index,
+        nat20: false,
+        nat1: false,
+      })),
+      participants: [...heroParticipants, ...enemyParticipants],
+      combat_finished: combatRoundState.enemies.every(
+        (enemy) => enemy.currentHp <= 0,
+      ),
+    };
+  }, [
+    activeCharacter,
+    activeNpc,
+    combatRoundState,
+    runtimeStats,
+    visibleInitiativeOrder,
+  ]);
   const backendSaveState = useMemo<SaveGameState>(() => {
     const mainCharacter = activeCharacter ?? characters.ryu;
     const companion = activeNpc ?? characters.ayane;
@@ -471,8 +815,15 @@ export default function Home() {
         egg_stolen: true,
       },
       inventory: inventoryState,
+      encounter: backendEncounterState,
     };
-  }, [activeCharacter, activeNpc, inventoryState, runtimeStats]);
+  }, [
+    activeCharacter,
+    activeNpc,
+    backendEncounterState,
+    inventoryState,
+    runtimeStats,
+  ]);
   const pendingSkillNames = new Set(
     pendingCheck?.checks
       .map((check) => check.skill)
@@ -642,6 +993,92 @@ export default function Home() {
     setRollAnimationKey((currentKey) => currentKey + 1);
   };
 
+  const mapEncounterActorKind = (
+    actor: FrontendEncounterActor,
+  ): InitiativeActor["kind"] => {
+    if (actor.kind === "enemy" || actor.side === "enemies") {
+      return "enemy";
+    }
+
+    return actor.id === toBackendCharacterId(selectedCharacterId ?? "ryu")
+      ? "player"
+      : "companion";
+  };
+
+  const applyFrontendEncounterState = (
+    frontendState: FrontendEncounterState,
+  ) => {
+    const initiativeActors: InitiativeActor[] =
+      frontendState.initiativeOrder.map((actor) => ({
+        id: actor.id,
+        name: actor.name,
+        kind: mapEncounterActorKind(actor),
+        total: actor.total ?? undefined,
+      }));
+    const enemies: EnemyCombatState[] = frontendState.enemies.map((enemy) => ({
+      id: enemy.id,
+      name: enemy.name,
+      currentHp: enemy.currentHp ?? 0,
+      maxHp: enemy.maxHp ?? 1,
+      ac: enemy.ac ?? 10,
+      speed: enemy.speed ?? 30,
+      conditions: enemy.defeated ? ["Besiegt"] : [],
+    }));
+
+    setInitiativeOrder(initiativeActors);
+    setCombatRoundState((currentState) => ({
+      ...currentState,
+      round: frontendState.round,
+      activeActorId: frontendState.activeActorId,
+      turnIndex: frontendState.turnIndex,
+      initiativeOrder: initiativeActors,
+      enemies,
+      awaitingRoll: null,
+      lastBackendEvents: frontendState.lastBackendEvents,
+      turnControl: frontendState.turnControl,
+      lastResolution: frontendState.lastResolution,
+    }));
+    setCombatAttackFlowState({
+      actorId: frontendState.activeActorId,
+      actionName: null,
+      attackFormula: null,
+      damageFormula: null,
+      targetId: null,
+      attackTotal: null,
+      attackHit: null,
+      step:
+        frontendState.round <= 0
+          ? "idle"
+          : frontendState.turnControl?.requiresPlayerAction
+            ? "chooseAction"
+            : frontendState.turnControl?.autoResolvable
+              ? "enemyResolving"
+              : "idle",
+    });
+    setRuntimeStats((currentStats) => {
+      const nextStats = { ...currentStats };
+
+      frontendState.heroes.forEach((hero) => {
+        const frontendCharacterId = toFrontendCharacterId(hero.id);
+
+        if (!frontendCharacterId) {
+          return;
+        }
+
+        nextStats[frontendCharacterId] = {
+          ...nextStats[frontendCharacterId],
+          currentHp: hero.currentHp ?? nextStats[frontendCharacterId].currentHp,
+          maxHp: hero.maxHp ?? nextStats[frontendCharacterId].maxHp,
+          speed: hero.speed ?? nextStats[frontendCharacterId].speed,
+          ac: hero.ac ?? nextStats[frontendCharacterId].ac,
+        };
+      });
+
+      return nextStats;
+    });
+    applyHudEvents(frontendState.hudEvents);
+  };
+
   const syncInventoryView = async (nextInventory = inventoryState) => {
     try {
       const response = await getInventoryView(nextInventory);
@@ -742,14 +1179,16 @@ export default function Home() {
   const getChoiceChecks = (choice: Choice) =>
     choice.check ? [choice.check] : choice.checks ?? [];
 
+  const formatCheckName = (check: SkillCheck) =>
+    check.skill ? `${check.skill} (${check.ability})` : check.ability;
+
   const formatChecks = (checks: SkillCheck[]) =>
     checks
-      .map((check) => `${check.skill ?? check.ability} DC ${check.dc}`)
+      .map((check) => `${formatCheckName(check)} DC ${check.dc}`)
       .join(" oder ");
 
   const formatChoiceDescription = (choice: Choice) => {
-    const checks = getChoiceChecks(choice);
-    const personalized = choice.description
+    return choice.description
       .replace(/^Du nimmst/, `${actorName} nimmt`)
       .replace(/^Du willst/, `${actorName} will`)
       .replace(/^Du beobachtest/, `${actorName} beobachtet`)
@@ -761,9 +1200,98 @@ export default function Home() {
       .replace(/^Du merkst/, `${actorName} merkt`)
       .replace(/^Du trittst/, `${actorName} tritt`);
 
-    return checks.length > 0
-      ? `${personalized} (${formatChecks(checks)})`
-      : personalized;
+  };
+
+  const renderChoiceButton = (choice: Choice) => {
+    const checks = getChoiceChecks(choice);
+    const hasChecks = checks.length > 0;
+    const isCheckDropdownOpen = openChoiceCheckId === choice.id;
+    const runChoiceCheck = (check: SkillCheck) => {
+      const skillName = check.skill ?? check.ability;
+      const skillModifier =
+        activeSheet?.skills.find(([label]) => label === skillName)?.[1] ?? "+0";
+
+      setPendingCheck({ choice, checks });
+      setOpenChoiceCheckId(null);
+      rollFormula(`${actorName} ${skillName}`, `1d20${skillModifier}`, {
+        pendingCheckOverride: { choice, checks },
+        skill: skillName,
+      });
+    };
+
+    return (
+      <div
+        className="group relative"
+        key={choice.id}
+      >
+        <button
+          className="w-full rounded-md border border-white/10 bg-white/[0.06] px-3 py-3 pr-11 text-left text-sm text-slate-100 transition hover:border-ember-400/70 hover:bg-ember-500/15 focus-visible:border-ember-300 focus-visible:outline-none"
+          onClick={() => {
+            setOpenChoiceCheckId(null);
+            chooseAction(choice);
+          }}
+          type="button"
+        >
+          <span className="block min-w-0 font-semibold">{choice.label}</span>
+          <span className="mt-1 block text-xs leading-relaxed text-slate-400">
+            {formatChoiceDescription(choice)}
+          </span>
+        </button>
+
+        {hasChecks ? (
+          <button
+            aria-expanded={isCheckDropdownOpen}
+            aria-label={`Skillchecks für ${choice.label} anzeigen`}
+            className="absolute right-2 top-2 grid size-8 place-items-center rounded-md border border-ember-400/45 bg-ember-500/15 text-ember-100 transition hover:border-ember-300 hover:bg-ember-500/25 focus-visible:border-ember-300 focus-visible:outline-none"
+            onClick={(event) => {
+              event.stopPropagation();
+              setOpenChoiceCheckId((currentId) =>
+                currentId === choice.id ? null : choice.id,
+              );
+            }}
+            type="button"
+          >
+            <ChevronDown
+              className={`size-4 transition ${
+                isCheckDropdownOpen ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+        ) : null}
+
+        {hasChecks ? (
+          <div
+            className={`absolute right-0 top-12 z-50 w-52 max-w-[calc(100%-0.75rem)] origin-top-right rounded-md border border-ember-400/60 bg-ink-950 p-2 text-xs text-slate-200 shadow-2xl ring-1 ring-black/50 ${
+              isCheckDropdownOpen
+                ? "block"
+                : "hidden group-hover:block group-focus-within:block"
+            }`}
+          >
+            <p className="mb-2 text-right font-bold uppercase tracking-[0.12em] text-ember-200">
+              Skillchecks
+            </p>
+            <div className="space-y-1.5">
+              {checks.map((check) => (
+                <button
+                  className="flex w-full items-center justify-between gap-2 rounded border border-white/10 bg-white/[0.08] px-2 py-1.5 text-left font-semibold text-slate-100 transition hover:border-ember-300/80 hover:bg-ember-500/20 focus-visible:border-ember-300 focus-visible:outline-none"
+                  key={`${choice.id}-${check.ability}-${check.skill ?? "ability"}-${check.dc}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    runChoiceCheck(check);
+                  }}
+                  type="button"
+                >
+                  <span className="min-w-0 truncate">{formatCheckName(check)}</span>
+                  <span className="shrink-0 rounded bg-ember-500/20 px-1.5 py-0.5 text-ember-100">
+                    DC {check.dc}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
   };
 
   const buildLocalDmAnswer = (question: string) => {
@@ -830,6 +1358,7 @@ export default function Home() {
 
       setInitiativeRolls({});
       setInitiativeOrder([]);
+      setCombatRoundState(createInitialCombatRoundState());
       setInitiativeStatus(
         advantageNames.length > 0
           ? `Initiative offen: Ryu und Ayane müssen würfeln. ${advantageNames.join(
@@ -881,6 +1410,366 @@ export default function Home() {
     }
 
     goToScene(choice.nextSceneId);
+  };
+
+  const advanceCombatTurn = () => {
+    setCombatRoundState((currentState) => {
+      const order = currentState.initiativeOrder;
+
+      if (order.length === 0 || currentState.round === 0) {
+        return currentState;
+      }
+
+      const nextTurnIndex = (currentState.turnIndex + 1) % order.length;
+      const isNewRound = nextTurnIndex === 0;
+      const nextRound = isNewRound ? currentState.round + 1 : currentState.round;
+      const nextActor = order[nextTurnIndex];
+
+      setSelectedCombatTargetId(null);
+      setCombatAttackFlowState(
+        createCombatAttackFlowStateForActor(nextActor, nextRound),
+      );
+
+      return {
+        ...currentState,
+        round: nextRound,
+        activeActorId: nextActor?.id ?? null,
+        turnIndex: nextTurnIndex,
+        awaitingRoll: null,
+      };
+    });
+  };
+
+  const resolveBackendCombatTurn = async (targetId?: string) => {
+    if (!activeCombatActor || isBackendTurnResolving) {
+      return;
+    }
+
+    setIsBackendTurnResolving(true);
+    setCombatStatus("Backend loest den aktuellen Kampfrunden-Zug auf...");
+
+    try {
+      await syncBackendSave();
+      const target =
+        activeCombatActor.kind === "enemy"
+          ? undefined
+          : availableCombatTargets.find((item) => item.id === targetId) ??
+            selectedCombatTarget;
+      const needsHeroTarget = activeCombatActor.kind !== "enemy";
+
+      if (needsHeroTarget && !target) {
+        setCombatStatus("Bitte zuerst ein Ziel fuer den Angriff auswaehlen.");
+        setCombatAttackFlowState({
+          actorId: activeCombatActor.id,
+          actionName: null,
+          attackFormula: null,
+          damageFormula: null,
+          targetId: null,
+          attackTotal: null,
+          attackHit: null,
+          step: "chooseAction",
+        });
+        return;
+      }
+
+      setCombatAttackFlowState({
+        actorId: activeCombatActor.id,
+        actionName: null,
+        attackFormula: null,
+        damageFormula: null,
+        targetId: target?.id ?? null,
+        attackTotal: null,
+        attackHit: null,
+        step:
+          activeCombatActor.kind === "enemy"
+            ? "enemyResolving"
+            : "awaitAttackRoll",
+      });
+
+      const action: EncounterAutoTurnAction | undefined =
+        activeCombatActor.kind === "enemy"
+          ? undefined
+          : target
+            ? {
+                action_type: "attack",
+                actor_id:
+                  activeCombatActor.kind === "player"
+                    ? toBackendCharacterId(activeCharacter?.id ?? "ryu")
+                    : toBackendCharacterId(activeNpc?.id ?? "ayane"),
+                target_id: target.id,
+              }
+            : undefined;
+
+      const response = await resolveSaveEncounterAutoTurn(
+        BACKEND_SLOT_NAME,
+        action,
+      );
+
+      setInventoryState(response.state.inventory);
+      applyFrontendEncounterState(response.frontend_state);
+      setSelectedCombatTargetId(null);
+      setCombatAttackFlowState({
+        actorId:
+          response.frontend_state.lastResolution?.actorId ??
+          response.frontend_state.activeActorId,
+        actionName: null,
+        attackFormula: null,
+        damageFormula: null,
+        targetId: response.frontend_state.lastResolution?.targetId ?? null,
+        attackTotal: response.frontend_state.lastResolution?.attack?.total ?? null,
+        attackHit: response.frontend_state.lastResolution?.attack?.hit ?? null,
+        step:
+          response.frontend_state.lastResolution?.attack?.hit === true
+            ? "awaitDamageRoll"
+            : response.frontend_state.lastResolution
+              ? "turnResolved"
+              : response.frontend_state.turnControl?.requiresPlayerAction
+                ? "chooseAction"
+                : response.frontend_state.turnControl?.autoResolvable
+                  ? "enemyResolving"
+                  : "idle",
+      });
+      setCombatStatus(
+        response.frontend_state.lastResolution
+          ? "Backend-Zug aufgeloest. HUD und Kampfrunde wurden aktualisiert."
+          : "Backend-Zug verarbeitet. Kampfrunde wurde aktualisiert.",
+      );
+    } catch (error) {
+      setCombatStatus(
+        "Backend-Auto-Turn nicht erreichbar. Lokaler Turn-Fallback aktiv.",
+      );
+      addGameLog({
+        title: "Backend-Auto-Turn fehlgeschlagen",
+        detail: error instanceof Error ? error.message : "Unbekannter Fehler",
+      });
+      setCombatAttackFlowState(createInitialCombatAttackFlowState());
+      advanceCombatTurn();
+    } finally {
+      setIsBackendTurnResolving(false);
+    }
+  };
+
+  const rollCombatFormula = (label: string, formula: string) => {
+    const parsedFormula = parseDiceFormula(formula);
+
+    if (!parsedFormula) {
+      return null;
+    }
+
+    const rolls = Array.from({ length: parsedFormula.diceCount }, () =>
+      Math.floor(Math.random() * parsedFormula.diceType) + 1,
+    );
+    const selectedRoll = rolls.reduce((sum, roll) => sum + roll, 0);
+    const result: RollResult = {
+      diceType: parsedFormula.diceType,
+      rolls,
+      selectedRoll,
+      modifier: parsedFormula.modifier,
+      total: selectedRoll + parsedFormula.modifier,
+      mode: "normal",
+      label,
+    };
+
+    setRollResult(result);
+    setRollAnimationKey((currentKey) => currentKey + 1);
+    addGameLog({
+      title: label,
+      detail: `Wurf ${rolls.join(" + ")} + Mod ${parsedFormula.modifier} = ${result.total}`,
+      total: result.total,
+    });
+
+    return result;
+  };
+
+  const rollCombatAttack = () => {
+    if (
+      !activeCombatActor ||
+      !selectedCombatTarget ||
+      !combatAttackFlowState.actionName ||
+      !combatAttackFlowState.attackFormula
+    ) {
+      return;
+    }
+
+    const result = rollCombatFormula(
+      `${activeCombatActor.name} ${combatAttackFlowState.actionName} Angriff`,
+      combatAttackFlowState.attackFormula,
+    );
+
+    if (!result) {
+      return;
+    }
+
+    const targetAc = selectedCombatTarget.ac ?? 10;
+    const attackHit = result.total >= targetAc;
+    const hitText = attackHit
+      ? `${activeCombatActor.name} trifft ${selectedCombatTarget.name} mit ${combatAttackFlowState.actionName}.`
+      : `${activeCombatActor.name} verfehlt ${selectedCombatTarget.name} mit ${combatAttackFlowState.actionName}.`;
+
+    setCombatAttackFlowState((currentState) => ({
+      ...currentState,
+      attackTotal: result.total,
+      attackHit,
+      step: attackHit ? "awaitDamageRoll" : "turnResolved",
+    }));
+    setCombatStatus(
+      `${result.total} gegen AC ${targetAc}: ${
+        attackHit ? "Treffer. Schadenwurf erforderlich." : "Verfehlt. Kein Damage Roll."
+      }`,
+    );
+    setDmMessages((messages) => [
+      ...messages,
+      {
+        id: createId(),
+        sender: "DM",
+        text: attackHit
+          ? `${hitText} Bitte wuerfle jetzt den Schaden.`
+          : `${hitText} Der Zug kann beendet werden.`,
+      },
+    ]);
+  };
+
+  const rollCombatDamage = () => {
+    if (
+      !activeCombatActor ||
+      !combatAttackFlowState.targetId ||
+      !combatAttackFlowState.actionName ||
+      !combatAttackFlowState.damageFormula ||
+      combatAttackFlowState.attackHit !== true
+    ) {
+      return;
+    }
+
+    const result = rollCombatFormula(
+      `${activeCombatActor.name} ${combatAttackFlowState.actionName} Schaden`,
+      combatAttackFlowState.damageFormula,
+    );
+
+    if (!result) {
+      return;
+    }
+
+    let targetName = "Ziel";
+    let remainingHp = 0;
+
+    setCombatRoundState((currentState) => {
+      const nextEnemies = currentState.enemies.map((enemy) => {
+        if (enemy.id !== combatAttackFlowState.targetId) {
+          return enemy;
+        }
+
+        targetName = enemy.name;
+        remainingHp = Math.max(0, enemy.currentHp - result.total);
+
+        return {
+          ...enemy,
+          currentHp: remainingHp,
+          conditions:
+            remainingHp <= 0
+              ? Array.from(new Set([...enemy.conditions, "Besiegt"]))
+              : enemy.conditions,
+        };
+      });
+
+      return {
+        ...currentState,
+        enemies: nextEnemies,
+        awaitingRoll: null,
+      };
+    });
+    setCombatAttackFlowState((currentState) => ({
+      ...currentState,
+      damageTotal: result.total,
+      remainingHp,
+      step: "turnResolved",
+    }));
+    setCombatStatus(
+      `${combatAttackFlowState.actionName} verursacht ${result.total} Schaden. ${targetName}: HP ${remainingHp}.`,
+    );
+    setDmMessages((messages) => [
+      ...messages,
+      {
+        id: createId(),
+        sender: "DM",
+        text: `${activeCombatActor.name} verursacht ${result.total} Schaden mit ${combatAttackFlowState.actionName}. ${targetName} hat noch ${remainingHp} HP.`,
+      },
+    ]);
+  };
+
+  const resolveLocalEnemyTurn = () => {
+    if (!activeCombatActor || activeCombatActor.kind !== "enemy") {
+      return;
+    }
+
+    const heroTargets = [activeCharacter, activeNpc].filter(
+      (character): character is NonNullable<typeof character> => Boolean(character),
+    );
+    const aliveHeroTargets = heroTargets.filter(
+      (character) => runtimeStats[character.id].currentHp > 0,
+    );
+    const target =
+      aliveHeroTargets[Math.floor(Math.random() * aliveHeroTargets.length)] ??
+      heroTargets[0];
+
+    if (!target) {
+      return;
+    }
+
+    const targetStats = runtimeStats[target.id];
+    const attackRoll = Math.floor(Math.random() * 20) + 1;
+    const attackModifier = 4;
+    const attackTotal = attackRoll + attackModifier;
+    const hit = attackTotal >= targetStats.ac;
+    const damageRoll = hit ? Math.floor(Math.random() * 6) + 1 + 2 : 0;
+    const remainingHp = hit
+      ? Math.max(0, targetStats.currentHp - damageRoll)
+      : targetStats.currentHp;
+
+    if (hit) {
+      setRuntimeStats((currentStats) => ({
+        ...currentStats,
+        [target.id]: {
+          ...currentStats[target.id],
+          currentHp: remainingHp,
+        },
+      }));
+    }
+
+    setCombatAttackFlowState({
+      actorId: activeCombatActor.id,
+      actionName: "Verdeckter Angriff",
+      attackFormula: "verdeckt",
+      damageFormula: hit ? "1d6+2" : null,
+      targetId: target.id,
+      attackTotal: null,
+      attackHit: hit,
+      damageTotal: hit ? damageRoll : 0,
+      remainingHp,
+      step: "turnResolved",
+    });
+    setCombatStatus(
+      hit
+        ? `${activeCombatActor.name} trifft ${target.name}. ${target.name} erhaelt ${damageRoll} Schaden und hat noch ${remainingHp} HP.`
+        : `${activeCombatActor.name} verfehlt ${target.name}. Kein Schaden.`,
+    );
+    setDmMessages((messages) => [
+      ...messages,
+      {
+        id: createId(),
+        sender: "DM",
+        text: hit
+          ? `${activeCombatActor.name} greift ${target.name} an. Der Angriffswurf bleibt verdeckt. Treffer. ${target.name} erhaelt ${damageRoll} Schaden und hat noch ${remainingHp} HP.`
+          : `${activeCombatActor.name} greift ${target.name} an. Der Angriffswurf bleibt verdeckt. Verfehlt.`,
+      },
+    ]);
+  };
+
+  const endPlayerCombatTurn = () => {
+    if (combatAttackFlowState.step !== "turnResolved") {
+      return;
+    }
+
+    advanceCombatTurn();
   };
 
   const continueDialogue = () => {
@@ -936,6 +1825,7 @@ export default function Home() {
     options?: {
       skill?: string;
       initiativeCharacterId?: CharacterId;
+      pendingCheckOverride?: PendingCheck;
       rollMode?: RollMode;
     },
   ) => {
@@ -1067,6 +1957,14 @@ export default function Home() {
       );
 
       setInitiativeOrder(combatInitiativeOrder);
+      setCombatRoundState((currentState) => ({
+        ...currentState,
+        round: 1,
+        activeActorId: combatInitiativeOrder[0]?.id ?? null,
+        turnIndex: 0,
+        initiativeOrder: combatInitiativeOrder,
+        awaitingRoll: null,
+      }));
       setInitiativeStatus(`Initiative steht: ${visibleInitiativeOrder}.`);
       addGameLog({
         title: "Initiative vollständig",
@@ -1095,12 +1993,14 @@ export default function Home() {
       return;
     }
 
-    if (!pendingCheck || !options?.skill) {
+    const activePendingCheck = options?.pendingCheckOverride ?? pendingCheck;
+
+    if (!activePendingCheck || !options?.skill) {
       return;
     }
 
-    const matchingCheck = pendingCheck.checks.find(
-      (check) => check.skill === options.skill,
+    const matchingCheck = activePendingCheck.checks.find(
+      (check) => (check.skill ?? check.ability) === options.skill,
     );
 
     if (!matchingCheck) {
@@ -1111,14 +2011,16 @@ export default function Home() {
     const success = naturalRoll === 20 || result.total >= matchingCheck.dc;
     const targetSceneId =
       naturalRoll === 20
-        ? pendingCheck.choice.natural20SceneId ?? pendingCheck.choice.nextSceneId
+        ? activePendingCheck.choice.natural20SceneId ??
+          activePendingCheck.choice.nextSceneId
         : naturalRoll === 1
-          ? pendingCheck.choice.natural1SceneId ??
-            pendingCheck.choice.failureSceneId ??
-            pendingCheck.choice.nextSceneId
+          ? activePendingCheck.choice.natural1SceneId ??
+            activePendingCheck.choice.failureSceneId ??
+            activePendingCheck.choice.nextSceneId
           : success
-            ? pendingCheck.choice.nextSceneId
-            : pendingCheck.choice.failureSceneId ?? pendingCheck.choice.nextSceneId;
+            ? activePendingCheck.choice.nextSceneId
+            : activePendingCheck.choice.failureSceneId ??
+              activePendingCheck.choice.nextSceneId;
     const checkDetail =
       naturalRoll === 20
         ? `Natural 20: ${options.skill} gegen DC ${matchingCheck.dc} automatisch stark geschafft.`
@@ -1151,9 +2053,9 @@ export default function Home() {
     setPendingCheck(null);
 
     window.setTimeout(() => {
-      if (selectedCharacterId) {
-        persistSaveState(targetSceneId, selectedCharacterId, pendingCheck.choice.label);
-      }
+    if (selectedCharacterId) {
+        persistSaveState(targetSceneId, selectedCharacterId, activePendingCheck.choice.label);
+    }
 
       goToScene(targetSceneId);
     }, 900);
@@ -1484,7 +2386,7 @@ export default function Home() {
           </div>
         </header>
 
-        <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
+        <div className="hidden rounded-md border border-white/10 bg-white/[0.06] p-2">
           <BookOpen className="mb-1 size-4 text-ember-400" />
           <p className="text-xs text-slate-400">Aktuelle Szene</p>
           <p className="text-sm font-semibold">
@@ -1492,13 +2394,9 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(16rem,19rem)_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(16rem,19rem)_minmax(0,1fr)_minmax(12rem,15rem)] xl:grid-cols-[20rem_minmax(0,1fr)_15rem]">
           <aside className="relative z-30 max-h-[32rem] min-h-0 overflow-y-auto rounded-md border border-white/10 bg-ink-950/70 p-3 lg:max-h-none">
-            <button
-              className="mb-3 flex w-full items-center justify-between rounded-md border border-white/10 bg-white/[0.06] px-3 py-2 text-left"
-              onClick={() => setIsSheetExpanded((isExpanded) => !isExpanded)}
-              type="button"
-            >
+            <div className="mb-3 flex w-full items-center justify-between rounded-md border border-white/10 bg-white/[0.06] px-3 py-2 text-left">
               <span>
                 <span className="block text-xs uppercase tracking-[0.16em] text-ember-300">
                   Charakterbogen
@@ -1507,16 +2405,318 @@ export default function Home() {
                   {activeCharacter?.name ?? "Noch kein Charakter"}
                 </span>
               </span>
-              <ChevronDown
-                className={`size-4 transition ${
-                  isSheetExpanded ? "rotate-180" : ""
-                }`}
-              />
-            </button>
+            </div>
+
+            {activeCharacter &&
+            activeNpc &&
+            activeRuntimeStats &&
+            companionRuntimeStats ? (
+              <div className="mb-3 grid grid-cols-2 gap-2">
+                <article
+                  className={`overflow-hidden rounded-md border border-ember-400/35 bg-white/[0.05] shadow-glow ${
+                    isSheetExpanded ? "col-span-2" : ""
+                  }`}
+                >
+                  <div className="flex h-32 items-end justify-center bg-gradient-to-b from-white/10 to-black/40">
+                    <Image
+                      alt={`${activeCharacter.name} Portrait`}
+                      className="max-h-32 object-contain drop-shadow-2xl"
+                      height={190}
+                      src={activeCharacter.modelImageUrl}
+                      width={150}
+                    />
+                  </div>
+                  <div className="flex items-start justify-between gap-2 border-t border-white/10 p-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold">
+                        {activeCharacter.name}
+                      </p>
+                      <p className="text-[0.65rem] uppercase tracking-[0.12em] text-ember-300">
+                        Hauptcharakter
+                      </p>
+                    </div>
+                    <button
+                      aria-label={`${activeCharacter.name} Sheet umschalten`}
+                      className="grid size-7 shrink-0 place-items-center rounded-md border border-white/10 bg-white/[0.06] text-slate-200 transition hover:border-ember-400/70"
+                      onClick={() =>
+                        setIsSheetExpanded((isExpanded) => !isExpanded)
+                      }
+                      type="button"
+                    >
+                      <ChevronDown
+                        className={`size-4 transition ${
+                          isSheetExpanded ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 border-t border-white/10 p-1.5 text-center">
+                    <span className="rounded bg-red-500/15 px-1 py-1 text-[0.62rem] font-bold text-red-100">
+                      HP {activeRuntimeStats.currentHp}/{activeRuntimeStats.maxHp}
+                    </span>
+                    <span className="rounded bg-white/[0.06] px-1 py-1 text-[0.62rem] font-bold text-slate-100">
+                      AC {activeRuntimeStats.ac}
+                    </span>
+                    <span className="rounded bg-white/[0.06] px-1 py-1 text-[0.62rem] font-bold text-slate-100">
+                      SP {activeCharacter.stats.speed}
+                    </span>
+                  </div>
+                  {isSheetExpanded && activeSheet ? (
+                    <div className="space-y-2 border-t border-white/10 p-2">
+                      <button
+                        className="w-full rounded-md border border-ember-400/30 bg-ember-500/10 px-2 py-2 text-left text-xs transition hover:border-ember-400"
+                        onClick={() =>
+                          rollFormula(
+                            `${activeCharacter.name} Initiative`,
+                            `1d20+${activeCharacter.stats.initiative}`,
+                            { initiativeCharacterId: activeCharacter.id },
+                          )
+                        }
+                        type="button"
+                      >
+                        Initiative +{activeCharacter.stats.initiative}
+                      </button>
+                      <div className="space-y-1">
+                        <p className="text-[0.62rem] uppercase tracking-[0.14em] text-slate-400">
+                          Skills
+                        </p>
+                        <div className="grid grid-cols-2 gap-1">
+                          {activeSheet.skills.map(([label, value]) => (
+                            <button
+                              className={`min-w-0 rounded-md border px-2 py-1.5 text-left text-[0.68rem] transition hover:border-ember-400/70 ${
+                                pendingSkillNames.has(label)
+                                  ? "border-ember-400 bg-ember-500/20 shadow-glow"
+                                  : "border-white/10 bg-white/[0.05]"
+                              }`}
+                              key={label}
+                              onClick={() =>
+                                rollFormula(
+                                  `${activeCharacter.name} ${label}`,
+                                  `1d20${value}`,
+                                  { skill: label },
+                                )
+                              }
+                              type="button"
+                            >
+                              <span className="block truncate text-slate-300">
+                                {label}
+                              </span>
+                              <span className="font-bold text-slate-100">
+                                {value}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[0.62rem] uppercase tracking-[0.14em] text-slate-400">
+                          Aktionen
+                        </p>
+                        <div className="grid gap-1">
+                        {activeSheet.actions.map((action) => (
+                          <div
+                            className="rounded-md border border-white/10 bg-white/[0.05] p-2"
+                            key={action.name}
+                          >
+                            <p className="truncate text-xs font-bold">
+                              {action.name}
+                            </p>
+                            <div className="mt-1 grid grid-cols-2 gap-1">
+                              <button
+                                className="rounded-md border border-white/10 bg-white/[0.06] px-1 py-1.5 text-[0.65rem] transition hover:border-ember-400/70"
+                                onClick={() =>
+                                  rollFormula(
+                                    `${action.name} Angriff`,
+                                    `1d20+${action.attack}`,
+                                  )
+                                }
+                                type="button"
+                              >
+                                <span className="block text-[0.55rem] uppercase tracking-[0.12em] text-slate-400">
+                                  Hit
+                                </span>
+                                <span className="font-bold">+{action.attack}</span>
+                              </button>
+                              <button
+                                className="rounded-md border border-white/10 bg-white/[0.06] px-1 py-1.5 text-[0.65rem] transition hover:border-ember-400/70"
+                                onClick={() =>
+                                  rollFormula(`${action.name} Schaden`, action.damage)
+                                }
+                                type="button"
+                              >
+                                <span className="block text-[0.55rem] uppercase tracking-[0.12em] text-slate-400">
+                                  Damage
+                                </span>
+                                <span className="font-bold">{action.damage}</span>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[0.62rem] uppercase tracking-[0.14em] text-slate-400">
+                          Inventory
+                        </p>
+                        <div className="space-y-1">
+                          {inventoryItems.length > 0 ? (
+                            inventoryItems.map((item) => (
+                              <article
+                                className="rounded-md border border-white/10 bg-white/[0.05] p-2"
+                                key={item.item_id}
+                              >
+                                <p className="truncate text-xs font-bold">
+                                  {item.name}
+                                </p>
+                                <p className="text-[0.65rem] text-slate-500">
+                                  Menge {item.quantity}
+                                  {item.equipped ? " · ausgerüstet" : ""}
+                                </p>
+                                <div className="mt-1 grid grid-cols-2 gap-1">
+                                  {(item.actions ?? []).slice(0, 4).map((action) => (
+                                    <button
+                                      className="rounded-md border border-white/10 bg-white/[0.06] px-1 py-1.5 text-[0.65rem] font-semibold transition hover:border-ember-400/70"
+                                      key={action}
+                                      onClick={() =>
+                                        handleInventoryAction(item, action)
+                                      }
+                                      type="button"
+                                    >
+                                      {action}
+                                    </button>
+                                  ))}
+                                </div>
+                              </article>
+                            ))
+                          ) : (
+                            <p className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-2 text-[0.68rem] text-slate-400">
+                              Inventory wird vom Backend geladen.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
+
+                <article
+                  className={`overflow-hidden rounded-md border border-white/10 bg-white/[0.05] ${
+                    isCompanionExpanded ? "col-span-2" : ""
+                  }`}
+                >
+                  <div className="flex h-32 items-end justify-center bg-gradient-to-b from-white/10 to-black/40">
+                    <Image
+                      alt={`${activeNpc.name} Portrait`}
+                      className="max-h-32 object-contain drop-shadow-2xl"
+                      height={190}
+                      src={activeNpc.modelImageUrl}
+                      width={150}
+                    />
+                  </div>
+                  <div className="flex items-start justify-between gap-2 border-t border-white/10 p-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold">{activeNpc.name}</p>
+                      <p className="text-[0.65rem] uppercase tracking-[0.12em] text-slate-400">
+                        Begleitung
+                      </p>
+                    </div>
+                    <button
+                      aria-label={`${activeNpc.name} Sheet umschalten`}
+                      className="grid size-7 shrink-0 place-items-center rounded-md border border-white/10 bg-white/[0.06] text-slate-200 transition hover:border-ember-400/70"
+                      onClick={() =>
+                        setIsCompanionExpanded((isExpanded) => !isExpanded)
+                      }
+                      type="button"
+                    >
+                      <ChevronDown
+                        className={`size-4 transition ${
+                          isCompanionExpanded ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 border-t border-white/10 p-1.5 text-center">
+                    <span className="rounded bg-red-500/15 px-1 py-1 text-[0.62rem] font-bold text-red-100">
+                      HP {companionRuntimeStats.currentHp}/{companionRuntimeStats.maxHp}
+                    </span>
+                    <span className="rounded bg-white/[0.06] px-1 py-1 text-[0.62rem] font-bold text-slate-100">
+                      AC {companionRuntimeStats.ac}
+                    </span>
+                    <span className="rounded bg-white/[0.06] px-1 py-1 text-[0.62rem] font-bold text-slate-100">
+                      SP {activeNpc.stats.speed}
+                    </span>
+                  </div>
+                  {isCompanionExpanded && companionSheet ? (
+                    <div className="space-y-2 border-t border-white/10 p-2">
+                      <button
+                        className="w-full rounded-md border border-ember-400/30 bg-ember-500/10 px-2 py-2 text-left text-xs transition hover:border-ember-400"
+                        onClick={() =>
+                          rollFormula(
+                            `${activeNpc.name} Initiative`,
+                            `1d20+${activeNpc.stats.initiative}`,
+                            { initiativeCharacterId: activeNpc.id },
+                          )
+                        }
+                        type="button"
+                      >
+                        Initiative +{activeNpc.stats.initiative}
+                      </button>
+                      <div className="space-y-1">
+                        <p className="text-[0.62rem] uppercase tracking-[0.14em] text-slate-400">
+                          Aktionen
+                        </p>
+                        {companionSheet.actions.map((action) => (
+                          <div
+                            className="rounded-md border border-white/10 bg-white/[0.05] p-2"
+                            key={action.name}
+                          >
+                            <p className="truncate text-xs font-bold">
+                              {action.name}
+                            </p>
+                            <div className="mt-1 grid grid-cols-2 gap-1">
+                              <button
+                                className="rounded-md border border-white/10 bg-white/[0.06] px-1 py-1.5 text-[0.65rem] transition hover:border-ember-400/70"
+                                onClick={() =>
+                                  rollFormula(
+                                    `${activeNpc.name} ${action.name} Angriff`,
+                                    `1d20+${action.attack}`,
+                                  )
+                                }
+                                type="button"
+                              >
+                                <span className="block text-[0.55rem] uppercase tracking-[0.12em] text-slate-400">
+                                  Hit
+                                </span>
+                                <span className="font-bold">+{action.attack}</span>
+                              </button>
+                              <button
+                                className="rounded-md border border-white/10 bg-white/[0.06] px-1 py-1.5 text-[0.65rem] transition hover:border-ember-400/70"
+                                onClick={() =>
+                                  rollFormula(
+                                    `${activeNpc.name} ${action.name} Schaden`,
+                                    action.damage,
+                                  )
+                                }
+                                type="button"
+                              >
+                                <span className="block text-[0.55rem] uppercase tracking-[0.12em] text-slate-400">
+                                  Damage
+                                </span>
+                                <span className="font-bold">{action.damage}</span>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
+              </div>
+            ) : null}
 
             {activeCharacter && activeSheet && isSheetExpanded ? (
-              <div className="space-y-3">
-                <div className="overflow-hidden rounded-md border border-white/10 bg-black/35">
+              <div className="hidden space-y-3">
+                <div className="hidden overflow-hidden rounded-md border border-white/10 bg-black/35">
                   <div className="flex h-40 items-end justify-center bg-gradient-to-b from-white/5 to-transparent">
                     <Image
                       alt={`${activeCharacter.name} Charakterbild`}
@@ -1535,7 +2735,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="hidden grid-cols-3 gap-2">
                   <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
                     <HeartPulse className="mb-1 size-4 text-ember-400" />
                     <p className="text-xs text-slate-400">HP</p>
@@ -1778,30 +2978,49 @@ export default function Home() {
               </div>
             ) : null}
 
-            {activeNpc && companionSheet ? (
-              <div className="mt-3 space-y-3 rounded-md border border-white/10 bg-white/[0.03] p-2">
+            {activeNpc && companionSheet && isCompanionExpanded ? (
+              <div className="hidden mt-3 space-y-2 rounded-md border border-white/10 bg-white/[0.03] p-2">
                 <button
-                  className="flex w-full items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-left transition hover:border-ember-400/60"
+                  className="flex w-full items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-2 py-2 text-left transition hover:border-ember-400/60"
                   onClick={() =>
                     setIsCompanionExpanded((isExpanded) => !isExpanded)
                   }
                   type="button"
                 >
-                  <div>
+                  <div className="grid size-12 shrink-0 place-items-end overflow-hidden rounded-md border border-white/10 bg-black/35">
+                    <Image
+                      alt={`${activeNpc.name} Begleiterbild`}
+                      className="max-h-12 object-contain drop-shadow-xl"
+                      height={72}
+                      src={activeNpc.modelImageUrl}
+                      width={56}
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
                     <p className="text-xs uppercase tracking-[0.16em] text-ember-300">
                       NPC-Begleitung
                     </p>
-                    <p className="text-sm font-bold">{activeNpc.name}</p>
-                    <p className="text-xs text-slate-400">
+                    <p className="truncate text-sm font-bold">{activeNpc.name}</p>
+                    <p className="line-clamp-2 text-xs text-slate-400">
                       Level {activeNpc.level} {activeNpc.className} ·{" "}
                       {activeNpc.subclassName}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
-                    <span>
-                      HP {companionRuntimeStats?.currentHp} | AC{" "}
+                  <div className="grid shrink-0 grid-cols-3 gap-1 text-center text-[0.65rem] font-bold text-slate-100">
+                    <span className="rounded border border-white/10 bg-white/[0.06] px-1.5 py-1">
+                      <span className="block text-[0.55rem] font-semibold text-slate-400">HP</span>
+                      {companionRuntimeStats?.currentHp}/{companionRuntimeStats?.maxHp}
+                    </span>
+                    <span className="rounded border border-white/10 bg-white/[0.06] px-1.5 py-1">
+                      <span className="block text-[0.55rem] font-semibold text-slate-400">AC</span>
                       {companionRuntimeStats?.ac}
                     </span>
+                    <span className="rounded border border-white/10 bg-white/[0.06] px-1.5 py-1">
+                      <span className="block text-[0.55rem] font-semibold text-slate-400">SPD</span>
+                      {activeNpc.stats.speed}
+                    </span>
+                  </div>
+                  <div className="shrink-0 text-slate-300">
                     {isCompanionExpanded ? (
                       <ChevronDown className="size-4" />
                     ) : (
@@ -1812,17 +3031,17 @@ export default function Home() {
 
                 {isCompanionExpanded ? (
                   <>
-                    <div className="overflow-hidden rounded-md border border-white/10 bg-black/35">
-                      <div className="flex h-32 items-end justify-center bg-gradient-to-b from-white/5 to-transparent">
+                    <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] overflow-hidden rounded-md border border-white/10 bg-black/35">
+                      <div className="flex h-24 items-end justify-center bg-gradient-to-b from-white/5 to-transparent">
                         <Image
                           alt={`${activeNpc.name} Begleiterbild`}
-                          className="max-h-32 object-contain drop-shadow-2xl"
+                          className="max-h-24 object-contain drop-shadow-2xl"
                           height={180}
                           src={activeNpc.modelImageUrl}
                           width={140}
                         />
                       </div>
-                      <div className="border-t border-white/10 p-2">
+                      <div className="border-l border-white/10 p-2">
                         <p className="text-sm font-bold">{activeNpc.name}</p>
                         <p className="text-xs text-slate-400">
                           Level {activeNpc.level} {activeNpc.className} ·{" "}
@@ -1835,22 +3054,21 @@ export default function Home() {
                         <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
                           <HeartPulse className="mb-1 size-4 text-ember-400" />
                           <p className="text-xs text-slate-400">HP</p>
-                          <p className="text-sm font-bold">
-                            {companionRuntimeStats?.currentHp} /{" "}
-                            {companionRuntimeStats?.maxHp}
+                          <p className="whitespace-nowrap text-sm font-bold">
+                            {companionRuntimeStats?.currentHp}/{companionRuntimeStats?.maxHp}
                           </p>
                         </div>
                         <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
                           <ShieldCheck className="mb-1 size-4 text-ember-400" />
                           <p className="text-xs text-slate-400">AC</p>
-                          <p className="text-sm font-bold">
+                          <p className="whitespace-nowrap text-sm font-bold">
                             {companionRuntimeStats?.ac}
                           </p>
                         </div>
                         <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
                           <Swords className="mb-1 size-4 text-ember-400" />
                           <p className="text-xs text-slate-400">Speed</p>
-                          <p className="text-sm font-bold">
+                          <p className="whitespace-nowrap text-sm font-bold">
                             {activeNpc.stats.speed} ft.
                           </p>
                         </div>
@@ -2031,39 +3249,88 @@ export default function Home() {
             ) : null}
           </aside>
 
-        <section className="flex min-h-0 flex-col justify-end overflow-hidden rounded-md border border-white/10 bg-ink-950/70 shadow-2xl">
+          <div className="flex min-h-0 flex-col gap-3">
+            <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
+              <BookOpen className="mb-1 size-4 text-ember-400" />
+              <p className="text-xs text-slate-400">Aktuelle Szene</p>
+              <p className="text-sm font-semibold">
+                {currentScene.chapter} · {currentScene.title}
+              </p>
+            </div>
+
+        <section className="flex min-h-0 flex-1 flex-col justify-end overflow-hidden rounded-md border border-white/10 bg-ink-950/70 shadow-2xl">
           <div
-            className="relative flex aspect-video w-full min-h-[18rem] max-h-[58dvh] flex-none items-end bg-cover bg-center p-4 lg:min-h-0 lg:max-h-[calc(100dvh-20rem)] lg:p-5"
+            className="relative flex w-full min-h-[26rem] flex-1 items-end bg-cover bg-center p-4 lg:min-h-0 lg:p-5"
             style={{
               backgroundImage: `linear-gradient(180deg,rgba(17,24,39,0.22),rgba(3,4,10,0.94)),url('${currentScene.imageUrl}')`,
             }}
           >
-            {isCombatScene && initiativeOrder.length > 0 ? (
-              <div className="absolute left-3 right-3 top-3 z-20 rounded-md border border-white/10 bg-ink-950/85 px-2 py-2 shadow-2xl backdrop-blur">
-                <div className="flex items-center gap-2 overflow-x-auto">
-                  <span className="shrink-0 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-ember-300">
-                    Initiative
-                  </span>
-                  {initiativeOrder.map((actor, index) => (
+            {false && isCombatScene && combatRoundState.round > 0 ? (
+              <div className="absolute left-3 right-3 top-14 z-20 grid gap-2 rounded-md border border-white/10 bg-ink-950/80 p-2 shadow-2xl backdrop-blur lg:grid-cols-[12rem_minmax(0,1fr)]">
+                <div className="rounded-md border border-ember-400/35 bg-ember-500/10 px-3 py-2">
+                  <p className="text-[0.62rem] font-bold uppercase tracking-[0.18em] text-ember-300">
+                    Kampfrunde {combatRoundState.round}
+                  </p>
+                  <p className="mt-1 text-sm font-black text-slate-100">
+                    {activeCombatActor
+                      ? `${activeCombatActor.name} ist am Zug`
+                      : "Zug wird vorbereitet"}
+                  </p>
+                  <p className="mt-1 text-[0.7rem] font-semibold text-slate-300">
+                    Zug {combatRoundState.turnIndex + 1}/
+                    {visibleInitiativeOrder.length}
+                  </p>
+                  {combatRoundState.turnControl ? (
+                    <p className="mt-1 text-[0.68rem] font-semibold text-slate-400">
+                      {combatRoundState.turnControl.requiresPlayerAction
+                        ? "Hero-Turn: Angriff bereit"
+                        : combatRoundState.turnControl.autoResolvable
+                          ? "Enemy-Turn: Backend auto-resolve"
+                          : "Turn wird vom Backend geprueft"}
+                    </p>
+                  ) : null}
+                  <button
+                    className="mt-2 w-full rounded-md border border-ember-400/45 bg-ember-500/15 px-3 py-2 text-xs font-black text-ember-100 transition hover:border-ember-300 hover:bg-ember-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={isBackendTurnResolving}
+                    onClick={() => resolveBackendCombatTurn()}
+                    type="button"
+                  >
+                    {isBackendTurnResolving
+                      ? "Backend rechnet..."
+                      : combatRoundState.turnControl?.autoResolvable
+                        ? "Enemy-Turn aufloesen"
+                        : "Aktion abschliessen"}
+                  </button>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {combatRoundState.enemies.map((enemy) => (
                     <div
-                      className={`flex shrink-0 items-center gap-2 rounded-md border px-2 py-1 text-xs font-bold ${
-                        index === 0
-                          ? "border-ember-400 bg-ember-500 text-ink-950"
-                          : actor.kind === "enemy"
-                            ? "border-red-400/40 bg-red-500/10 text-red-100"
-                            : "border-white/10 bg-white/[0.06] text-slate-100"
-                      }`}
-                      key={actor.id}
+                      className="rounded-md border border-red-400/30 bg-red-500/10 px-3 py-2"
+                      key={enemy.id}
                     >
-                      <span>{index + 1}</span>
-                      <span>{actor.name}</span>
-                      {actor.total !== undefined ? (
-                        <span className="text-[0.65rem] opacity-80">
-                          {actor.total}
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate text-sm font-black text-red-100">
+                          {enemy.name}
+                        </p>
+                        <span className="rounded border border-white/10 bg-white/[0.06] px-2 py-1 text-[0.62rem] font-bold text-slate-200">
+                          AC {enemy.ac}
                         </span>
-                      ) : (
-                        <span className="text-[0.65rem] opacity-70">DM</span>
-                      )}
+                      </div>
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-black/45">
+                        <div
+                          className="h-full rounded-full bg-red-400"
+                          style={{
+                            width: `${Math.max(
+                              0,
+                              Math.min(100, (enemy.currentHp / enemy.maxHp) * 100),
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="mt-1 text-[0.7rem] font-semibold text-slate-300">
+                        HP {enemy.currentHp}/{enemy.maxHp} · Speed {enemy.speed} ft.
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -2131,7 +3398,7 @@ export default function Home() {
               </aside>
             ) : null}
 
-            {pendingCheck ? (
+            {!isCombatScene && pendingCheck ? (
               <div className="absolute left-1/2 top-4 z-30 w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 rounded-md border border-ember-400/60 bg-ink-950/95 p-3 text-center shadow-glow">
                 <p className="text-xs uppercase tracking-[0.18em] text-ember-300">
                   Skillcheck erforderlich
@@ -2163,21 +3430,21 @@ export default function Home() {
             ) : null}
 
             {isCharacterSelection ? (
-              <div className="grid w-full gap-4 lg:grid-cols-2">
+              <div className="grid h-full w-full items-stretch gap-4 lg:grid-cols-2">
                 {(["ryu", "ayane"] as CharacterId[]).map((characterId) => {
                   const character = characters[characterId];
 
                   return (
                     <button
-                      className="group flex min-h-[32rem] flex-col justify-end overflow-hidden rounded-md border border-white/10 bg-ink-950/75 text-left transition hover:border-ember-400/70 hover:bg-ink-950/90"
+                      className="group flex min-h-0 flex-col overflow-hidden rounded-md border border-white/10 bg-ink-950/75 text-left transition hover:border-ember-400/70 hover:bg-ink-950/90"
                       key={character.id}
                       onClick={() => selectCharacter(character.id)}
                       type="button"
                     >
-                      <div className="flex min-h-64 items-end justify-center bg-gradient-to-b from-white/5 to-transparent px-3 pt-3">
+                      <div className="flex min-h-0 flex-1 items-center justify-center bg-gradient-to-b from-white/5 to-transparent px-3 py-5">
                         <Image
                           alt={`${character.name} Charaktermodell`}
-                          className="max-h-72 object-contain drop-shadow-2xl transition group-hover:scale-[1.03]"
+                          className="h-auto max-h-[min(21rem,42dvh)] w-auto object-contain object-center drop-shadow-2xl transition group-hover:scale-[1.03]"
                           height={420}
                           src={character.modelImageUrl}
                           width={320}
@@ -2248,8 +3515,8 @@ export default function Home() {
           </div>
 
           {!isCharacterSelection ? (
-            <div className="min-h-20 space-y-2 overflow-y-auto border-t border-white/10 bg-ink-950/95 p-2">
-              {pendingCheck ? (
+            <div className="hidden min-h-20 space-y-2 overflow-y-auto border-t border-white/10 bg-ink-950/95 p-2">
+              {!isCombatScene && pendingCheck ? (
                 <div className="rounded-md border border-ember-400/40 bg-ember-500/10 px-3 py-2 text-sm">
                   <p className="font-bold text-ember-200">
                     DM wartet auf Wurf
@@ -2261,30 +3528,475 @@ export default function Home() {
                   </p>
                 </div>
               ) : null}
-              {isLastDialogueLine && isDialogueFullyVisible
-                ? currentScene.choices.map((choice) => (
-                    <button
-                      className="w-full rounded-md border border-white/10 bg-white/[0.06] px-3 py-3 text-left text-sm text-slate-100 transition hover:border-ember-400/70 hover:bg-ember-500/15"
-                      key={choice.id}
-                      onClick={() => chooseAction(choice)}
-                      type="button"
-                    >
-                      <span className="block font-semibold">
-                        {choice.label}
-                      </span>
-                      <span className="mt-1 block text-xs leading-relaxed text-slate-400">
-                        {formatChoiceDescription(choice)}
-                      </span>
-                    </button>
-                  ))
+              {!isCombatScene && isLastDialogueLine && isDialogueFullyVisible
+                ? currentScene.choices.map((choice) => renderChoiceButton(choice))
                 : null}
             </div>
           ) : null}
         </section>
+          </div>
+          <aside className="flex min-h-0 flex-col gap-3 rounded-md border border-white/10 bg-ink-950/70 p-3">
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+              <p className="text-xs uppercase tracking-[0.18em] text-ember-300">
+                Spieleraktionen
+              </p>
+              {isCombatScene && visibleInitiativeOrder.length > 0 ? (
+                <div className="space-y-2 rounded-md border border-white/10 bg-white/[0.04] p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[0.62rem] font-bold uppercase tracking-[0.16em] text-ember-300">
+                      Initiative
+                    </p>
+                    {combatRoundState.round > 0 ? (
+                      <span className="rounded border border-ember-400/35 bg-ember-500/10 px-2 py-1 text-[0.62rem] font-black text-ember-100">
+                        Runde {combatRoundState.round}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-1">
+                    {visibleInitiativeOrder.map((actor, index) => (
+                      <div
+                        className={`grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-2 rounded-md border px-2 py-1.5 text-[0.68rem] font-bold ${
+                          actor.id === combatRoundState.activeActorId
+                            ? "border-ember-400 bg-ember-500 text-ink-950 shadow-glow"
+                            : actor.kind === "enemy"
+                              ? "border-red-400/40 bg-red-500/10 text-red-100"
+                              : "border-white/10 bg-white/[0.06] text-slate-100"
+                        }`}
+                        key={actor.id}
+                      >
+                        <span className="grid size-5 place-items-center rounded border border-current/25 text-[0.62rem]">
+                          {index + 1}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate">{actor.name}</span>
+                          <span className="block text-[0.55rem] font-black uppercase tracking-[0.1em] opacity-70">
+                            {actor.id === combatRoundState.activeActorId
+                              ? "Am Zug"
+                              : actor.kind === "enemy"
+                                ? "Gegner"
+                                : actor.kind === "companion"
+                                  ? "Begleiter"
+                                  : "Held"}
+                          </span>
+                        </span>
+                        <span className="rounded border border-current/20 px-1.5 py-0.5 text-[0.62rem] font-black">
+                          {actor.total !== undefined ? actor.total : "DM"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {combatRoundState.round > 0 ? (
+                    <div className="rounded-md border border-ember-400/30 bg-ink-950/80 p-2 shadow-[0_0_20px_rgba(251,146,60,0.12)]">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-slate-100">
+                            {activeCombatActor
+                              ? `${activeCombatActor.name} ist am Zug`
+                              : "Zug wird vorbereitet"}
+                          </p>
+                          <p className="mt-1 text-[0.7rem] font-semibold text-slate-300">
+                            Zug {combatRoundState.turnIndex + 1}/
+                            {visibleInitiativeOrder.length}
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded border border-white/10 bg-white/[0.06] px-2 py-1 text-[0.62rem] font-black text-slate-200">
+                          5e Flow
+                        </span>
+                      </div>
+                      <div className="mt-2 grid grid-cols-3 gap-1 text-center text-[0.58rem] font-black uppercase tracking-[0.08em]">
+                        <span
+                          className={`rounded border px-1 py-1 ${
+                            combatAttackFlowState.step === "chooseAction"
+                              ? "border-ember-400 bg-ember-500 text-ink-950"
+                              : "border-white/10 bg-white/[0.04] text-slate-400"
+                          }`}
+                        >
+                          1 Aktion
+                        </span>
+                        <span
+                          className={`rounded border px-1 py-1 ${
+                            combatAttackFlowState.step === "chooseTarget"
+                              ? "border-ember-400 bg-ember-500 text-ink-950"
+                              : "border-white/10 bg-white/[0.04] text-slate-400"
+                          }`}
+                        >
+                          2 Ziel
+                        </span>
+                        <span
+                          className={`rounded border px-1 py-1 ${
+                            combatAttackFlowState.step === "awaitAttackRoll" ||
+                            combatAttackFlowState.step === "awaitDamageRoll"
+                              ? "border-emerald-400 bg-emerald-500 text-ink-950"
+                              : combatAttackFlowState.step === "turnResolved"
+                                ? "border-white/20 bg-white/[0.08] text-slate-200"
+                                : "border-white/10 bg-white/[0.04] text-slate-400"
+                          }`}
+                        >
+                          3 Roll
+                        </span>
+                      </div>
+                      <p className="mt-2 rounded border border-white/10 bg-black/25 px-2 py-1.5 text-[0.68rem] font-semibold text-slate-300">
+                        {combatFlowStepCopy[combatAttackFlowState.step]}
+                      </p>
+                      {combatRoundState.turnControl?.requiresPlayerAction &&
+                      combatAttackFlowState.step === "chooseAction" ? (
+                        <div className="mt-2 rounded-md border border-white/10 bg-black/30 p-2">
+                          <p className="text-[0.62rem] font-bold uppercase tracking-[0.14em] text-ember-300">
+                            1. Aktion waehlen
+                          </p>
+                          <div className="mt-1 grid gap-1.5">
+                            {activeCombatActions.map((action) => (
+                              <button
+                                className="rounded-md border border-white/10 bg-white/[0.05] px-2 py-2 text-left transition hover:border-ember-400/70 hover:bg-ember-500/10"
+                                key={action.name}
+                                onClick={() => {
+                                  setSelectedCombatTargetId(null);
+                                  setCombatAttackFlowState({
+                                    actorId: activeCombatActor?.id ?? null,
+                                    actionName: action.name,
+                                    attackFormula: `1d20+${action.attack}`,
+                                    damageFormula: action.damage,
+                                    targetId: null,
+                                    attackTotal: null,
+                                    attackHit: null,
+                                    step: "chooseTarget",
+                                  });
+                                }}
+                                type="button"
+                              >
+                                <span className="block text-sm font-black text-slate-100">
+                                  {action.name}
+                                </span>
+                                <span className="mt-1 block text-[0.68rem] font-semibold text-slate-300">
+                                  Hit +{action.attack} | Schaden {action.damage}
+                                </span>
+                                <span className="mt-1 block text-[0.62rem] text-slate-500">
+                                  {action.note}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      {combatRoundState.turnControl?.requiresPlayerAction &&
+                      (combatAttackFlowState.step === "chooseTarget" ||
+                        combatAttackFlowState.step === "awaitAttackRoll") ? (
+                        <div className="mt-2 rounded-md border border-white/10 bg-black/30 p-2">
+                          <p className="text-[0.62rem] font-bold uppercase tracking-[0.14em] text-ember-300">
+                            2. Ziel waehlen
+                          </p>
+                          {combatAttackFlowState.actionName ? (
+                            <p className="mt-1 text-[0.68rem] font-semibold text-slate-300">
+                              Aktion: {combatAttackFlowState.actionName}
+                            </p>
+                          ) : null}
+                          <div className="mt-1 grid gap-1.5">
+                            {availableCombatTargets.map((target) => (
+                              <button
+                                className={`flex items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-left text-xs font-semibold transition ${
+                                  selectedCombatTargetId === target.id
+                                    ? "border-ember-400 bg-ember-500/20 text-ember-100"
+                                    : "border-white/10 bg-white/[0.05] text-slate-100 hover:border-ember-400/60"
+                                }`}
+                                key={target.id}
+                                onClick={() => {
+                                  setSelectedCombatTargetId(target.id);
+                                  setCombatAttackFlowState({
+                                    actorId: activeCombatActor?.id ?? null,
+                                    actionName: combatAttackFlowState.actionName,
+                                    attackFormula:
+                                      combatAttackFlowState.attackFormula,
+                                    damageFormula:
+                                      combatAttackFlowState.damageFormula,
+                                    targetId: target.id,
+                                    attackTotal: null,
+                                    attackHit: null,
+                                    step: "awaitAttackRoll",
+                                  });
+                                }}
+                                type="button"
+                              >
+                                <span className="min-w-0 truncate">
+                                  {target.name}
+                                </span>
+                                <span className="shrink-0 text-[0.62rem] text-slate-300">
+                                  AC {target.ac ?? "?"} | HP{" "}
+                                  {target.currentHp ?? "?"}/{target.maxHp ?? "?"}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      <button
+                        className="mt-2 w-full rounded-md border border-ember-400/55 bg-ember-500 px-3 py-2 text-xs font-black text-ink-950 shadow-glow transition hover:border-ember-200 hover:bg-ember-400 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.06] disabled:text-slate-500 disabled:shadow-none"
+                        disabled={
+                          isBackendTurnResolving ||
+                          (combatRoundState.turnControl?.requiresPlayerAction &&
+                            ((combatAttackFlowState.step === "awaitAttackRoll" &&
+                              (!selectedCombatTarget ||
+                                !combatAttackFlowState.actionName)) ||
+                              (combatAttackFlowState.step === "awaitDamageRoll" &&
+                                combatAttackFlowState.attackHit !== true) ||
+                              (combatAttackFlowState.step !== "awaitAttackRoll" &&
+                                combatAttackFlowState.step !== "awaitDamageRoll" &&
+                                combatAttackFlowState.step !== "turnResolved")))
+                        }
+                        onClick={() => {
+                          if (
+                            activeCombatActor?.kind === "enemy" &&
+                            combatAttackFlowState.step === "enemyResolving"
+                          ) {
+                            resolveLocalEnemyTurn();
+                            return;
+                          }
+
+                          if (
+                            activeCombatActor?.kind === "enemy" &&
+                            combatAttackFlowState.step === "turnResolved"
+                          ) {
+                            endPlayerCombatTurn();
+                            return;
+                          }
+
+                          if (combatRoundState.turnControl?.autoResolvable) {
+                            resolveLocalEnemyTurn();
+                            return;
+                          }
+
+                          if (combatAttackFlowState.step === "awaitAttackRoll") {
+                            rollCombatAttack();
+                            return;
+                          }
+
+                          if (combatAttackFlowState.step === "awaitDamageRoll") {
+                            rollCombatDamage();
+                            return;
+                          }
+
+                          if (combatAttackFlowState.step === "turnResolved") {
+                            endPlayerCombatTurn();
+                          }
+                        }}
+                        type="button"
+                      >
+                        {isBackendTurnResolving
+                          ? "Attack Roll wird ausgewertet..."
+                          : activeCombatActor?.kind === "enemy" &&
+                              combatAttackFlowState.step === "turnResolved"
+                            ? "Weiter zum naechsten Zug"
+                          : activeCombatActor?.kind === "enemy" ||
+                              combatRoundState.turnControl?.autoResolvable
+                            ? "DM-Gegnerzug auswerten"
+                            : combatAttackFlowState.step === "chooseAction"
+                              ? "Erst Aktion waehlen"
+                              : combatAttackFlowState.step === "chooseTarget"
+                                ? "Dann Ziel waehlen"
+                                : combatAttackFlowState.step === "awaitDamageRoll"
+                                  ? `4. Schaden wuerfeln (${combatAttackFlowState.damageFormula})`
+                                  : combatAttackFlowState.step === "turnResolved"
+                                    ? "Zug beenden"
+                                : selectedCombatTarget &&
+                                    combatAttackFlowState.actionName
+                                  ? `3. Angriff wuerfeln (${combatAttackFlowState.attackFormula})`
+                                  : "Combat-Schritt offen"}
+                      </button>
+                      {combatAttackFlowState.attackTotal !== null ? (
+                        <div className="mt-2 rounded-md border border-white/10 bg-black/30 px-2 py-2 text-xs text-slate-200">
+                          <p className="font-black text-slate-100">
+                            Angriffswurf: {combatAttackFlowState.attackTotal}
+                          </p>
+                          <p className="mt-1 font-semibold">
+                            {combatAttackFlowState.attackHit
+                              ? "Treffer. Damage Roll ist jetzt Pflicht."
+                              : "Verfehlt. Kein Damage Roll, Zug kann beendet werden."}
+                          </p>
+                        </div>
+                      ) : null}
+                      {activeCombatActor?.kind === "enemy" &&
+                      combatAttackFlowState.step === "turnResolved" ? (
+                        <div className="mt-2 rounded-md border border-red-400/40 bg-red-500/10 px-2 py-2 text-xs text-red-50">
+                          <p className="font-black text-red-100">
+                            DM-KI: {activeCombatActor.name} greift{" "}
+                            {getCombatActorName(combatAttackFlowState.targetId)} an
+                          </p>
+                          <p className="mt-1 text-slate-300">
+                            Angriffswurf verdeckt.{" "}
+                            {combatAttackFlowState.attackHit
+                              ? "Treffer."
+                              : "Verfehlt."}
+                          </p>
+                          {combatAttackFlowState.attackHit ? (
+                            <p className="mt-1 font-semibold text-red-100">
+                              Sichtbarer Gesamtschaden:{" "}
+                              {combatAttackFlowState.damageTotal ?? 0} | HP jetzt{" "}
+                              {combatAttackFlowState.remainingHp ?? "?"}
+                            </p>
+                          ) : (
+                            <p className="mt-1 font-semibold text-slate-300">
+                              Kein Schaden.
+                            </p>
+                          )}
+                        </div>
+                      ) : null}
+                      {isLastResolutionEnemyAction && lastCombatResolution ? (
+                        <div className="mt-2 rounded-md border border-red-400/35 bg-red-500/10 px-2 py-2 text-xs text-red-50">
+                          <p className="font-black text-red-100">
+                            DM-KI: {getCombatActorName(lastCombatResolution.actorId)} greift{" "}
+                            {getCombatActorName(lastCombatResolution.targetId)} an
+                          </p>
+                          <p className="mt-1 text-slate-300">
+                            Angriffswurf verdeckt.{" "}
+                            {lastCombatResolution.attack?.hit
+                              ? "Treffer."
+                              : "Verfehlt."}
+                          </p>
+                          {lastCombatResolution.attack?.hit ? (
+                            <p className="mt-1 font-semibold text-red-100">
+                              Sichtbarer Gesamtschaden:{" "}
+                              {lastCombatResolution.damage?.total ?? 0} | Helden-HP jetzt{" "}
+                              {lastCombatResolution.hp?.remainingHp ?? "?"}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {isLastResolutionHeroAction && lastCombatResolution ? (
+                        <div className="mt-2 rounded-md border border-emerald-400/35 bg-emerald-500/10 px-2 py-2 text-xs text-emerald-50">
+                          <p className="font-black text-emerald-100">
+                            {getCombatActorName(lastCombatResolution.actorId)} greift{" "}
+                            {getCombatActorName(lastCombatResolution.targetId)} an
+                          </p>
+                          <p className="mt-1 text-slate-300">
+                            2. Attack Roll:{" "}
+                            {lastCombatResolution.attack?.total ?? "?"} gegen AC{" "}
+                            {lastCombatResolution.attack?.targetAc ?? "?"} -{" "}
+                            {lastCombatResolution.attack?.hit
+                              ? "Treffer"
+                              : "Verfehlt"}
+                          </p>
+                          {lastCombatResolution.attack?.hit ? (
+                            <p className="mt-1 font-semibold text-emerald-100">
+                              3. Damage Roll:{" "}
+                              {lastCombatResolution.damage?.total ?? 0} Schaden
+                              {" | "}
+                              Ziel-HP jetzt{" "}
+                              {lastCombatResolution.hp?.remainingHp ?? "?"}
+                            </p>
+                          ) : (
+                            <p className="mt-1 font-semibold text-slate-300">
+                              Kein Damage Roll bei Miss.
+                            </p>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {combatRoundState.round > 0 ? (
+                    <div className="grid gap-1.5">
+                      {combatRoundState.enemies.map((enemy) => (
+                        <div
+                          className="rounded-md border border-red-400/30 bg-red-500/10 px-2 py-2"
+                          key={enemy.id}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="truncate text-xs font-black text-red-100">
+                              {enemy.name}
+                            </p>
+                            <span className="rounded border border-white/10 bg-white/[0.06] px-2 py-1 text-[0.62rem] font-bold text-slate-200">
+                              AC {enemy.ac}
+                            </span>
+                          </div>
+                          <div className="mt-2 h-2 overflow-hidden rounded-full bg-black/45">
+                            <div
+                              className="h-full rounded-full bg-red-400"
+                              style={{
+                                width: `${Math.max(
+                                  0,
+                                  Math.min(
+                                    100,
+                                    (enemy.currentHp / enemy.maxHp) * 100,
+                                  ),
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                          <p className="mt-1 text-[0.68rem] font-semibold text-slate-300">
+                            HP {enemy.currentHp}/{enemy.maxHp} | Speed{" "}
+                            {enemy.speed} ft.
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {isCharacterSelection ? (
+                <div className="rounded-md border border-white/10 bg-white/[0.05] p-3 text-sm leading-relaxed text-slate-300">
+                  Wähle links im Storybild Ryu oder Ayane als Hauptcharakter.
+                  Danach erscheinen hier die auswählbaren Aktionen.
+                </div>
+              ) : null}
+              {!isCombatScene && pendingCheck ? (
+                <div className="rounded-md border border-ember-400/40 bg-ember-500/10 px-3 py-2 text-sm">
+                  <p className="font-bold text-ember-200">
+                    DM wartet auf Wurf
+                  </p>
+                  <p className="mt-1 text-xs text-slate-300">
+                    Bitte würfle {formatChecks(pendingCheck.checks)} im
+                    Charakterbogen. Danach entscheidet der DC, ob die Szene
+                    gelingt oder scheitert.
+                  </p>
+                </div>
+              ) : null}
+              {!isCombatScene &&
+              !isCharacterSelection &&
+              isLastDialogueLine &&
+              isDialogueFullyVisible
+                ? currentScene.choices.map((choice) => renderChoiceButton(choice))
+                : null}
+            </div>
+
+            <div className="flex justify-center border-t border-white/10 pt-3 text-slate-50">
+              <button
+                aria-label="Letztes Wuerfelergebnis"
+                className="relative mx-auto grid size-16 place-items-center"
+                type="button"
+              >
+                <span
+                  className={`d20-result ${
+                    rollResult ? "d20-result-roll" : ""
+                  } grid size-16 place-items-center border bg-gradient-to-br text-xl font-black shadow-glow ${diceColorClass[diceColor]}`}
+                  key={rollAnimationKey}
+                >
+                  <svg
+                    aria-hidden="true"
+                    className="d20-result-shape"
+                    viewBox="0 0 100 100"
+                  >
+                    <polygon className="d20-outline" points="50,3 82,18 96,48 88,70 50,97 12,70 4,48 18,18" />
+                    <polygon className="d20-facet d20-facet-light" points="50,3 18,18 50,36 82,18" />
+                    <polygon className="d20-facet d20-facet-mid" points="18,18 4,48 50,36" />
+                    <polygon className="d20-facet d20-facet-dark" points="82,18 96,48 50,36" />
+                    <polygon className="d20-facet d20-facet-front" points="4,48 50,36 96,48 50,66" />
+                    <polygon className="d20-facet d20-facet-mid" points="4,48 12,70 50,66" />
+                    <polygon className="d20-facet d20-facet-dark" points="96,48 88,70 50,66" />
+                    <polygon className="d20-facet d20-facet-bottom" points="12,70 50,97 50,66" />
+                    <polygon className="d20-facet d20-facet-bottom-dark" points="88,70 50,97 50,66" />
+                    <polyline className="d20-edge" points="50,3 50,36 4,48 50,66 50,97" />
+                    <polyline className="d20-edge" points="18,18 50,36 82,18" />
+                    <polyline className="d20-edge" points="96,48 50,66 12,70" />
+                  </svg>
+                  <span className="d20-result-number">
+                    {rollResult?.total ?? "d20"}
+                  </span>
+                </span>
+              </button>
+            </div>
+          </aside>
         </div>
       </section>
       <aside
-        className="fixed bottom-3 right-4 z-[80] w-[5.5rem] p-2.5 text-slate-50 sm:right-6"
+        className="hidden"
       >
         <button
           aria-label="Letztes Wuerfelergebnis"

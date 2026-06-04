@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { characters, type CharacterId } from "@/data/scenes";
 
 const SAVE_KEY = "falkenwacht.saveStates";
+const LAST_SAVE_KEY = "falkenwacht.lastSave";
 const MAX_ACCOUNT_SAVES = 15;
 const MAX_CAMPAIGN_SAVES = 5;
 
@@ -71,7 +72,28 @@ export default function CampaignsPage() {
     );
 
     localStorage.setItem(SAVE_KEY, JSON.stringify(nextSaveStates));
+
+    try {
+      const lastSaveState = JSON.parse(
+        localStorage.getItem(LAST_SAVE_KEY) ?? "null",
+      ) as SaveState | null;
+      const lastSaveStillExists =
+        lastSaveState &&
+        nextSaveStates.some((saveState) => saveState.id === lastSaveState.id);
+
+      if (!lastSaveStillExists) {
+        localStorage.removeItem(LAST_SAVE_KEY);
+      }
+    } catch {
+      localStorage.removeItem(LAST_SAVE_KEY);
+    }
+
     setSaveStates(nextSaveStates);
+  };
+
+  const startNewGame = () => {
+    localStorage.removeItem(LAST_SAVE_KEY);
+    window.location.href = "/";
   };
 
   return (
@@ -120,13 +142,14 @@ export default function CampaignsPage() {
                 eigenen Kampagnen, sondern spätere Abschnitte dieser Kampagne.
               </p>
             </div>
-            <Link
+            <button
               className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-ember-400/50 bg-ember-500 px-3 text-sm font-bold text-ink-950 transition hover:bg-ember-400"
-              href="/"
+              onClick={startNewGame}
+              type="button"
             >
               <Play className="size-4" />
-              Kampagne starten
-            </Link>
+              Neues Spiel starten
+            </button>
           </div>
 
           <div className="grid gap-3 lg:grid-cols-3">
@@ -232,13 +255,14 @@ export default function CampaignsPage() {
                 Starte die Kampagne, wähle einen Charakter und triff eine
                 Entscheidung. Danach erscheint der Speicherstand hier.
               </p>
-              <Link
+              <button
                 className="mt-4 inline-flex h-10 items-center gap-2 rounded-md border border-white/15 bg-white/10 px-3 text-sm font-semibold text-slate-100 transition hover:border-ember-400/70 hover:bg-ember-500/15"
-                href="/"
+                onClick={startNewGame}
+                type="button"
               >
                 <Sparkles className="size-4" />
-                Zur Kampagne
-              </Link>
+                Neues Spiel starten
+              </button>
             </div>
           )}
         </section>
