@@ -2,12 +2,21 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field, model_validator
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import Session
 
 from ai_dm import build_hud_events, generate_ai_dm_narration
 from characters import CHARACTERS
-from combat import advance_turn, create_combat_state
+from combat import (
+    advance_turn,
+    create_combat_state,
+    resolve_auto_turn,
+    resolve_encounter_turn,
+    resolve_enemy_turn,
+    resolve_player_turn,
+)
 from database import Base, engine, get_db
+from encounter_persistence import create_encounter_turn_log, upsert_encounter_from_save_state
 from inventory import apply_inventory_action, build_inventory_view, list_item_catalog
 from scenes import SCENES
 from dice import (
@@ -20,7 +29,7 @@ from dice import (
     skill_check,
     stat_modifier,
 )
-from models import SaveGame
+from models import Encounter, EncounterTurnLog, SaveGame
 
 
 @asynccontextmanager
@@ -33,6 +42,161 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="DnD Visual Novel API", lifespan=lifespan)
+
+
+def build_frontend_encounter_state(
+    state: dict,
+    hud_events: list[dict],
+    rules_result: dict | None = None,
+) -> dict:
+    participants_by_id = {
+        participant["participant_id"]: participant for participant in state.get("participants", [])
+    }
+
+    def actor_view(participant_id: str, initiative_entry: dict | None = None) -> dict:
+        participant = participants_by_id.get(participant_id, {"participant_id": participant_id})
+        return {
+            "id": participant_id,
+            "participantId": participant_id,
+            "name": _participant_display_name(participant_id, participant),
+            "kind": _participant_kind(participant.get("side")),
+            "side": participant.get("side"),
+            "currentHp": participant.get("current_hp"),
+            "maxHp": participant.get("max_hp"),
+            "ac": participant.get("armor_class"),
+            "speed": participant.get("speed", 30),
+            "defeated": participant.get("defeated", False),
+            "total": initiative_entry.get("total") if initiative_entry else None,
+            "roll": initiative_entry.get("roll") if initiative_entry else None,
+            "modifier": initiative_entry.get("modifier") if initiative_entry else None,
+            "nat20": initiative_entry.get("nat20") if initiative_entry else False,
+            "nat1": initiative_entry.get("nat1") if initiative_entry else False,
+        }
+
+    initiative_order = [
+        actor_view(entry["participant_id"], entry) for entry in state.get("initiative_order", [])
+    ]
+    participants = [
+        actor_view(participant["participant_id"]) for participant in state.get("participants", [])
+    ]
+    heroes = [
+        participant for participant in participants if participant.get("side") == "heroes"
+    ]
+    enemies = [
+        participant for participant in participants if participant.get("side") == "enemies"
+    ]
+    active_actor_id = state.get("active_participant_id")
+    active_actor = actor_view(active_actor_id) if active_actor_id else None
+
+    return {
+        "round": state.get("round_number"),
+        "turnIndex": state.get("turn_index"),
+        "activeActorId": active_actor_id,
+        "activeActor": active_actor,
+        "initiativeOrder": initiative_order,
+        "participants": participants,
+        "heroes": heroes,
+        "enemies": enemies,
+        "combatFinished": state.get("combat_finished", False),
+        "turnControl": build_frontend_turn_control(active_actor, heroes, enemies),
+        "hudEvents": hud_events,
+        "lastBackendEvents": hud_events,
+        "lastResolution": build_frontend_resolution(rules_result),
+    }
+
+
+def build_frontend_turn_control(
+    active_actor: dict | None,
+    heroes: list[dict],
+    enemies: list[dict],
+) -> dict:
+    if not active_actor or active_actor.get("defeated"):
+        return {
+            "requiresPlayerAction": False,
+            "autoResolvable": False,
+            "allowedActions": [],
+            "availableTargets": [],
+        }
+
+    active_side = active_actor.get("side")
+    if active_side == "heroes":
+        return {
+            "requiresPlayerAction": True,
+            "autoResolvable": False,
+            "allowedActions": ["attack"],
+            "availableTargets": [enemy for enemy in enemies if not enemy.get("defeated")],
+        }
+    if active_side == "enemies":
+        return {
+            "requiresPlayerAction": False,
+            "autoResolvable": True,
+            "allowedActions": [],
+            "availableTargets": [hero for hero in heroes if not hero.get("defeated")],
+        }
+
+    return {
+        "requiresPlayerAction": False,
+        "autoResolvable": False,
+        "allowedActions": [],
+        "availableTargets": [],
+    }
+
+
+def build_frontend_resolution(rules_result: dict | None) -> dict | None:
+    if not rules_result:
+        return None
+
+    attack = rules_result.get("attack")
+    damage = rules_result.get("damage")
+    hp = rules_result.get("hp")
+
+    return {
+        "actorId": rules_result.get("actor_id"),
+        "targetId": rules_result.get("target_id"),
+        "combatFinished": rules_result.get("combat_finished", False),
+        "attack": {
+            "roll": attack.get("roll"),
+            "modifier": attack.get("modifier"),
+            "total": attack.get("total"),
+            "targetAc": attack.get("target_ac"),
+            "hit": attack.get("hit"),
+            "critical": attack.get("critical", False),
+            "nat20": attack.get("nat20", False),
+            "nat1": attack.get("nat1", False),
+        }
+        if attack
+        else None,
+        "damage": {
+            "rolls": damage.get("rolls", []),
+            "modifier": damage.get("modifier"),
+            "total": damage.get("total"),
+            "critical": damage.get("critical", False),
+        }
+        if damage
+        else None,
+        "hp": {
+            "previousHp": hp.get("previous_hp"),
+            "damage": hp.get("damage"),
+            "remainingHp": hp.get("remaining_hp"),
+            "defeated": hp.get("defeated", False),
+        }
+        if hp
+        else None,
+    }
+
+
+def _participant_display_name(participant_id: str, participant: dict) -> str:
+    if participant_id in CHARACTERS:
+        return CHARACTERS[participant_id]["name"]
+    return participant.get("name") or participant_id.replace("-", " ").replace("_", " ").title()
+
+
+def _participant_kind(side: str | None) -> str:
+    if side == "heroes":
+        return "player"
+    if side == "enemies":
+        return "enemy"
+    return "unknown"
 
 
 class SkillCheckRequest(BaseModel):
@@ -72,6 +236,8 @@ class CombatParticipantRequest(BaseModel):
     dexterity_modifier: int
     current_hp: int = Field(ge=0)
     max_hp: int = Field(gt=0)
+    armor_class: int | None = Field(default=None, ge=1)
+    attack: dict | None = None
 
     @model_validator(mode="after")
     def validate_hp(self):
@@ -90,6 +256,8 @@ class CombatParticipantState(BaseModel):
     current_hp: int = Field(ge=0)
     max_hp: int = Field(gt=0)
     defeated: bool
+    armor_class: int | None = Field(default=None, ge=1)
+    attack: dict | None = None
 
 
 class InitiativeEntryResponse(BaseModel):
@@ -108,6 +276,50 @@ class CombatState(BaseModel):
     initiative_order: list[InitiativeEntryResponse] = Field(min_length=1)
     participants: list[CombatParticipantState] = Field(min_length=1)
     combat_finished: bool
+
+
+class EncounterAttackAction(BaseModel):
+    action_type: str = Field(pattern="^attack$")
+    actor_id: str = Field(min_length=1)
+    target_id: str = Field(min_length=1)
+    attack_modifier: int
+    target_ac: int = Field(ge=1)
+    damage_dice_count: int = Field(ge=1)
+    damage_die_sides: int = Field(ge=1)
+    damage_modifier: int = 0
+
+
+class EncounterPlayerAction(BaseModel):
+    action_type: str = Field(pattern="^attack$")
+    actor_id: str = Field(min_length=1)
+    target_id: str = Field(min_length=1)
+
+
+class EncounterTurnResolveRequest(BaseModel):
+    state: CombatState
+    action: EncounterAttackAction
+
+
+class SaveEncounterTurnResolveRequest(BaseModel):
+    action: EncounterAttackAction
+
+
+class EncounterPlayerTurnResolveRequest(BaseModel):
+    state: CombatState
+    action: EncounterPlayerAction
+
+
+class SaveEncounterPlayerTurnResolveRequest(BaseModel):
+    action: EncounterPlayerAction
+
+
+class EncounterAutoTurnResolveRequest(BaseModel):
+    state: CombatState
+    action: EncounterPlayerAction | None = None
+
+
+class SaveEncounterAutoTurnResolveRequest(BaseModel):
+    action: EncounterPlayerAction | None = None
 
 
 class AiDmNarrationRequest(BaseModel):
@@ -151,6 +363,7 @@ class SaveGameState(BaseModel):
     npc_companion: RuntimeCharacterState | None = None
     story_flags: dict[str, bool] = Field(default_factory=dict)
     inventory: list[InventoryItem] = Field(default_factory=list)
+    encounter: CombatState | None = None
 
 
 class SaveGameRequest(BaseModel):
@@ -305,6 +518,296 @@ def combat_state_next(state: CombatState):
     return advance_turn(state.model_dump())
 
 
+@app.post("/encounter/turn/resolve")
+def encounter_turn_resolve(request: EncounterTurnResolveRequest):
+    try:
+        result = resolve_encounter_turn(
+            state=request.state.model_dump(),
+            action=request.action.model_dump(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        **result,
+        "hud_events": build_hud_events(result["rules_result"]),
+    }
+
+
+@app.post("/encounter/enemy-turn/resolve")
+def encounter_enemy_turn_resolve(state: CombatState):
+    try:
+        result = resolve_enemy_turn(state=state.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        **result,
+        "hud_events": build_hud_events(result["rules_result"]),
+    }
+
+
+@app.post("/encounter/player-turn/resolve")
+def encounter_player_turn_resolve(request: EncounterPlayerTurnResolveRequest):
+    try:
+        result = resolve_player_turn(
+            state=request.state.model_dump(),
+            action=request.action.model_dump(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        **result,
+        "hud_events": build_hud_events(result["rules_result"]),
+    }
+
+
+@app.post("/encounter/auto-turn/resolve")
+def encounter_auto_turn_resolve(request: EncounterAutoTurnResolveRequest):
+    try:
+        result = resolve_auto_turn(
+            state=request.state.model_dump(),
+            action=request.action.model_dump() if request.action else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    hud_events = build_hud_events(result["rules_result"])
+    return {
+        **result,
+        "hud_events": hud_events,
+        "frontend_state": build_frontend_encounter_state(result["state"], hud_events, result["rules_result"]),
+    }
+
+
+@app.post("/saves/{slot_name}/encounter/turn/resolve")
+def save_encounter_turn_resolve(
+    slot_name: str,
+    request: SaveEncounterTurnResolveRequest,
+    db: Session = Depends(get_db),
+):
+    save_game = db.query(SaveGame).filter(SaveGame.slot_name == slot_name).first()
+    if not save_game:
+        raise HTTPException(status_code=404, detail="Save game not found")
+    encounter_state = save_game.state.get("encounter")
+    if not encounter_state:
+        raise HTTPException(status_code=422, detail="Save game has no active encounter")
+
+    try:
+        result = resolve_encounter_turn(
+            state=encounter_state,
+            action=request.action.model_dump(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    next_save_state = dict(save_game.state)
+    next_save_state["encounter"] = result["state"]
+    save_game.state = next_save_state
+    flag_modified(save_game, "state")
+    persisted_result = {**result, "hud_events": build_hud_events(result["rules_result"])}
+    encounter = upsert_encounter_from_save_state(db, save_game)
+    if encounter:
+        create_encounter_turn_log(db, encounter, persisted_result)
+    db.commit()
+    db.refresh(save_game)
+    return {
+        "slot_name": save_game.slot_name,
+        "state": save_game.state,
+        "rules_result": result["rules_result"],
+        "turn_events": result["turn_events"],
+        "hud_events": persisted_result["hud_events"],
+        "frontend_state": build_frontend_encounter_state(
+            result["state"],
+            persisted_result["hud_events"],
+            result["rules_result"],
+        ),
+    }
+
+
+@app.post("/saves/{slot_name}/encounter/auto-turn/resolve")
+def save_encounter_auto_turn_resolve(
+    slot_name: str,
+    request: SaveEncounterAutoTurnResolveRequest,
+    db: Session = Depends(get_db),
+):
+    save_game = db.query(SaveGame).filter(SaveGame.slot_name == slot_name).first()
+    if not save_game:
+        raise HTTPException(status_code=404, detail="Save game not found")
+    encounter_state = save_game.state.get("encounter")
+    if not encounter_state:
+        raise HTTPException(status_code=422, detail="Save game has no active encounter")
+
+    try:
+        result = resolve_auto_turn(
+            state=encounter_state,
+            action=request.action.model_dump() if request.action else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    next_save_state = dict(save_game.state)
+    next_save_state["encounter"] = result["state"]
+    save_game.state = next_save_state
+    flag_modified(save_game, "state")
+    persisted_result = {**result, "hud_events": build_hud_events(result["rules_result"])}
+    encounter = upsert_encounter_from_save_state(db, save_game)
+    if encounter:
+        create_encounter_turn_log(db, encounter, persisted_result)
+    db.commit()
+    db.refresh(save_game)
+    return {
+        "slot_name": save_game.slot_name,
+        "state": save_game.state,
+        "rules_result": result["rules_result"],
+        "turn_events": result["turn_events"],
+        "hud_events": persisted_result["hud_events"],
+        "frontend_state": build_frontend_encounter_state(
+            result["state"],
+            persisted_result["hud_events"],
+            result["rules_result"],
+        ),
+    }
+
+
+@app.post("/saves/{slot_name}/encounter/player-turn/resolve")
+def save_encounter_player_turn_resolve(
+    slot_name: str,
+    request: SaveEncounterPlayerTurnResolveRequest,
+    db: Session = Depends(get_db),
+):
+    save_game = db.query(SaveGame).filter(SaveGame.slot_name == slot_name).first()
+    if not save_game:
+        raise HTTPException(status_code=404, detail="Save game not found")
+    encounter_state = save_game.state.get("encounter")
+    if not encounter_state:
+        raise HTTPException(status_code=422, detail="Save game has no active encounter")
+
+    try:
+        result = resolve_player_turn(
+            state=encounter_state,
+            action=request.action.model_dump(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    next_save_state = dict(save_game.state)
+    next_save_state["encounter"] = result["state"]
+    save_game.state = next_save_state
+    flag_modified(save_game, "state")
+    persisted_result = {**result, "hud_events": build_hud_events(result["rules_result"])}
+    encounter = upsert_encounter_from_save_state(db, save_game)
+    if encounter:
+        create_encounter_turn_log(db, encounter, persisted_result)
+    db.commit()
+    db.refresh(save_game)
+    return {
+        "slot_name": save_game.slot_name,
+        "state": save_game.state,
+        "rules_result": result["rules_result"],
+        "turn_events": result["turn_events"],
+        "hud_events": persisted_result["hud_events"],
+    }
+
+
+@app.post("/saves/{slot_name}/encounter/enemy-turn/resolve")
+def save_encounter_enemy_turn_resolve(slot_name: str, db: Session = Depends(get_db)):
+    save_game = db.query(SaveGame).filter(SaveGame.slot_name == slot_name).first()
+    if not save_game:
+        raise HTTPException(status_code=404, detail="Save game not found")
+    encounter_state = save_game.state.get("encounter")
+    if not encounter_state:
+        raise HTTPException(status_code=422, detail="Save game has no active encounter")
+
+    try:
+        result = resolve_enemy_turn(state=encounter_state)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    next_save_state = dict(save_game.state)
+    next_save_state["encounter"] = result["state"]
+    save_game.state = next_save_state
+    flag_modified(save_game, "state")
+    persisted_result = {**result, "hud_events": build_hud_events(result["rules_result"])}
+    encounter = upsert_encounter_from_save_state(db, save_game)
+    if encounter:
+        create_encounter_turn_log(db, encounter, persisted_result)
+    db.commit()
+    db.refresh(save_game)
+    return {
+        "slot_name": save_game.slot_name,
+        "state": save_game.state,
+        "rules_result": result["rules_result"],
+        "turn_events": result["turn_events"],
+        "hud_events": persisted_result["hud_events"],
+    }
+
+
+@app.get("/saves/{slot_name}/encounter/persisted")
+def get_persisted_encounter(slot_name: str, db: Session = Depends(get_db)):
+    save_game = db.query(SaveGame).filter(SaveGame.slot_name == slot_name).first()
+    if not save_game:
+        raise HTTPException(status_code=404, detail="Save game not found")
+
+    encounter = (
+        db.query(Encounter)
+        .filter(Encounter.save_game_id == save_game.id)
+        .order_by(Encounter.id.desc())
+        .first()
+    )
+    if not encounter:
+        raise HTTPException(status_code=404, detail="Persisted encounter not found")
+
+    return {
+        "slot_name": save_game.slot_name,
+        "encounter": {
+            "id": encounter.id,
+            "round_number": encounter.round_number,
+            "turn_index": encounter.turn_index,
+            "active_participant_id": encounter.active_participant_id,
+            "combat_finished": encounter.combat_finished,
+            "participants": encounter.participants,
+            "initiative_order": encounter.initiative_order,
+        },
+    }
+
+
+@app.get("/saves/{slot_name}/encounter/turn-logs")
+def get_persisted_encounter_turn_logs(slot_name: str, db: Session = Depends(get_db)):
+    save_game = db.query(SaveGame).filter(SaveGame.slot_name == slot_name).first()
+    if not save_game:
+        raise HTTPException(status_code=404, detail="Save game not found")
+
+    encounter = (
+        db.query(Encounter)
+        .filter(Encounter.save_game_id == save_game.id)
+        .order_by(Encounter.id.desc())
+        .first()
+    )
+    if not encounter:
+        raise HTTPException(status_code=404, detail="Persisted encounter not found")
+
+    turn_logs = (
+        db.query(EncounterTurnLog)
+        .filter(EncounterTurnLog.encounter_id == encounter.id)
+        .order_by(EncounterTurnLog.id)
+        .all()
+    )
+    return {
+        "slot_name": save_game.slot_name,
+        "encounter_id": encounter.id,
+        "turn_logs": [
+            {
+                "id": turn_log.id,
+                "actor_id": turn_log.actor_id,
+                "target_id": turn_log.target_id,
+                "action_type": turn_log.action_type,
+                "rules_result": turn_log.rules_result,
+                "hud_events": turn_log.hud_events,
+                "turn_events": turn_log.turn_events,
+            }
+            for turn_log in turn_logs
+        ],
+    }
+
+
 @app.post("/ai-dm/narrate", response_model=AiDmNarrationResponse)
 def ai_dm_narrate(request: AiDmNarrationRequest):
     narration = generate_ai_dm_narration(
@@ -361,6 +864,7 @@ def save_inventory_action(slot_name: str, request: SaveInventoryActionRequest, d
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     save_game.state = result["state"]
+    flag_modified(save_game, "state")
     db.commit()
     db.refresh(save_game)
     return {
@@ -390,6 +894,7 @@ def create_or_update_save(request: SaveGameRequest, db: Session = Depends(get_db
         save_game.character_id = request.character_id
         save_game.scene_number = request.scene_number
         save_game.state = request.state.model_dump()
+        flag_modified(save_game, "state")
     else:
         save_game = SaveGame(
             slot_name=request.slot_name,
@@ -399,6 +904,9 @@ def create_or_update_save(request: SaveGameRequest, db: Session = Depends(get_db
         )
         db.add(save_game)
 
+    db.commit()
+    db.refresh(save_game)
+    upsert_encounter_from_save_state(db, save_game)
     db.commit()
     db.refresh(save_game)
     return save_game
