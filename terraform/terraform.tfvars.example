@@ -1,0 +1,4 @@
+# Kopiere diese Datei als terraform.tfvars und trage die echten Werte ein.
+# terraform.tfvars wird nicht ins Git eingecheckt (siehe .gitignore).
+
+db_password = "dein-passwort-hier"
