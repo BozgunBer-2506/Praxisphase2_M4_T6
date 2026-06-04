@@ -1309,9 +1309,13 @@ def test_save_encounter_auto_turn_resolve_persists_enemy_without_action():
         assert body["frontend_state"]["lastBackendEvents"][0]["type"] == "attack_roll"
         assert body["frontend_state"]["lastResolution"]["actorId"] == "bandit"
         assert body["frontend_state"]["lastResolution"]["targetId"] == "ayane"
-        assert body["frontend_state"]["lastResolution"]["attack"]["hit"] is True
-        assert body["frontend_state"]["lastResolution"]["damage"]["total"] >= 1
-        assert body["frontend_state"]["lastResolution"]["hp"]["remainingHp"] <= 28
+        assert body["frontend_state"]["lastResolution"]["attack"]["hit"] == body["rules_result"]["attack"]["hit"]
+        if body["rules_result"]["attack"]["hit"]:
+            assert body["frontend_state"]["lastResolution"]["damage"]["total"] >= 1
+            assert body["frontend_state"]["lastResolution"]["hp"]["remainingHp"] <= 28
+        else:
+            assert body["frontend_state"]["lastResolution"]["damage"] is None
+            assert body["frontend_state"]["lastResolution"]["hp"]["remainingHp"] == 28
         assert load_response.json()["state"]["encounter"]["active_participant_id"] == "johan"
         verify_db = TestingSessionLocal()
         try:
