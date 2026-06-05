@@ -1,4 +1,4 @@
-from dice import resolve_attack
+from dice import apply_damage, attack_roll, resolve_attack, roll_damage
 
 
 DEFAULT_ENEMY_ATTACK = {
@@ -137,6 +137,132 @@ def resolve_encounter_turn(state: dict, action: dict, roller=None) -> dict:
     }
 
 
+def resolve_encounter_attack_roll(state: dict, action: dict, roller=None) -> dict:
+    if state["combat_finished"]:
+        raise ValueError("combat is already finished")
+    if state.get("pending_damage"):
+        raise ValueError("pending damage must be resolved before another attack roll")
+    if action["action_type"] != "attack":
+        raise ValueError(f"Unsupported encounter action '{action['action_type']}'")
+    if action["actor_id"] != state["active_participant_id"]:
+        raise ValueError("actor_id must match active_participant_id")
+
+    participants = [dict(participant) for participant in state["participants"]]
+    actor = _participant_by_id(participants, action["actor_id"])
+    target = _participant_by_id(participants, action["target_id"])
+    if not actor:
+        raise ValueError("actor not found")
+    if actor["defeated"]:
+        raise ValueError("defeated actor cannot act")
+    if not target:
+        raise ValueError("target not found")
+    if target["defeated"]:
+        raise ValueError("defeated target cannot be attacked")
+
+    attack = attack_roll(action["attack_modifier"], action["target_ac"], roller)
+    rules_result = {
+        "actor_id": action["actor_id"],
+        "target_id": action["target_id"],
+        "attack": attack,
+        "damage": None,
+        "hp": None,
+        "awaiting_damage_roll": attack["hit"],
+    }
+
+    if not attack["hit"]:
+        return {
+            "state": advance_turn({**state, "participants": participants, "pending_damage": None}),
+            "rules_result": rules_result,
+            "turn_events": [
+                {
+                    "type": "encounter_attack_roll",
+                    "actor_id": action["actor_id"],
+                    "target_id": action["target_id"],
+                    "hit": False,
+                }
+            ],
+        }
+
+    pending_damage = {
+        "actor_id": action["actor_id"],
+        "target_id": action["target_id"],
+        "damage_dice_count": action["damage_dice_count"],
+        "damage_die_sides": action["damage_die_sides"],
+        "damage_modifier": action.get("damage_modifier", 0),
+        "critical": attack["critical"],
+        "target_current_hp": target["current_hp"],
+    }
+    return {
+        "state": {
+            **state,
+            "participants": participants,
+            "pending_damage": pending_damage,
+        },
+        "rules_result": rules_result,
+        "turn_events": [
+            {
+                "type": "encounter_attack_roll",
+                "actor_id": action["actor_id"],
+                "target_id": action["target_id"],
+                "hit": True,
+            }
+        ],
+    }
+
+
+def resolve_encounter_damage_roll(state: dict, roller=None) -> dict:
+    if state["combat_finished"]:
+        raise ValueError("combat is already finished")
+
+    pending_damage = state.get("pending_damage")
+    if not pending_damage:
+        raise ValueError("pending damage is required")
+    if pending_damage["actor_id"] != state["active_participant_id"]:
+        raise ValueError("pending damage actor must match active_participant_id")
+
+    participants = [dict(participant) for participant in state["participants"]]
+    target = _participant_by_id(participants, pending_damage["target_id"])
+    if not target:
+        raise ValueError("target not found")
+    if target["defeated"]:
+        raise ValueError("defeated target cannot receive pending damage")
+
+    damage = roll_damage(
+        pending_damage["damage_dice_count"],
+        pending_damage["damage_die_sides"],
+        pending_damage.get("damage_modifier", 0),
+        critical=pending_damage.get("critical", False),
+        roller=roller,
+    )
+    hp = apply_damage(target["current_hp"], damage["total"])
+    target["current_hp"] = hp["remaining_hp"]
+    target["defeated"] = hp["defeated"]
+
+    updated_state = {
+        **state,
+        "participants": participants,
+        "pending_damage": None,
+    }
+    return {
+        "state": advance_turn(updated_state),
+        "rules_result": {
+            "actor_id": pending_damage["actor_id"],
+            "target_id": pending_damage["target_id"],
+            "attack": None,
+            "damage": damage,
+            "hp": hp,
+            "awaiting_damage_roll": False,
+        },
+        "turn_events": [
+            {
+                "type": "encounter_damage_roll",
+                "actor_id": pending_damage["actor_id"],
+                "target_id": pending_damage["target_id"],
+            }
+        ],
+    }
+
+
 def resolve_enemy_turn(state: dict, roller=None) -> dict:
     if state["combat_finished"]:
         raise ValueError("combat is already finished")
@@ -217,6 +343,44 @@ def resolve_player_turn(state: dict, action: dict, roller=None) -> dict:
         "damage_modifier": attack.get("damage_modifier", 0),
     }
     return resolve_encounter_turn({**state, "participants": participants}, backend_action, roller=roller)
+
+
+def resolve_player_attack_roll(state: dict, action: dict, roller=None) -> dict:
+    if state["combat_finished"]:
+        raise ValueError("combat is already finished")
+    if action["action_type"] != "attack":
+        raise ValueError(f"Unsupported encounter action '{action['action_type']}'")
+    if action["actor_id"] != state["active_participant_id"]:
+        raise ValueError("actor_id must match active_participant_id")
+
+    participants = [dict(participant) for participant in state["participants"]]
+    actor = _participant_by_id(participants, action["actor_id"])
+    target = _participant_by_id(participants, action["target_id"])
+    if not actor:
+        raise ValueError("actor not found")
+    if actor["side"] != "heroes":
+        raise ValueError("active participant is not a hero")
+    if actor["defeated"]:
+        raise ValueError("defeated actor cannot act")
+    if not target:
+        raise ValueError("target not found")
+    if target["side"] != "enemies":
+        raise ValueError("player attacks must target enemies")
+    if target["defeated"]:
+        raise ValueError("defeated target cannot be attacked")
+
+    attack = {**DEFAULT_HERO_ATTACK, **(actor.get("attack") or {})}
+    backend_action = {
+        "action_type": "attack",
+        "actor_id": actor["participant_id"],
+        "target_id": target["participant_id"],
+        "attack_modifier": attack["attack_modifier"],
+        "target_ac": target.get("armor_class") or attack["target_ac"],
+        "damage_dice_count": attack["damage_dice_count"],
+        "damage_die_sides": attack["damage_die_sides"],
+        "damage_modifier": attack.get("damage_modifier", 0),
+    }
+    return resolve_encounter_attack_roll({**state, "participants": participants}, backend_action, roller=roller)
 
 
 def resolve_auto_turn(state: dict, action: dict | None = None, roller=None) -> dict:
