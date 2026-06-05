@@ -1,14 +1,13 @@
 import json
 
 try:
-    import anthropic
-    from aws_bedrock_token_generator import provide_token
+    import boto3
     _BEDROCK_AVAILABLE = True
 except ImportError:
     _BEDROCK_AVAILABLE = False
 
-DEFAULT_AI_MODEL = "anthropic.claude-haiku-4-5"
-BEDROCK_BASE_URL = "https://bedrock-mantle.eu-central-1.api.aws/anthropic"
+DEFAULT_AI_MODEL = "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
+BEDROCK_REGION = "eu-central-1"
 
 HELP_COMMANDS = {"/help", "/lore", "/rules", "/recap"}
 BLOCKED_EXTERNAL_LORE_TERMS = ("the originals", "new orleans", "new-orleans", "mikaelson")
@@ -247,17 +246,15 @@ def generate_ai_dm_narration(
     )
 
     try:
-        client = anthropic.Anthropic(
-            api_key=provide_token(region="eu-central-1"),
-            base_url=BEDROCK_BASE_URL,
-            default_headers={"anthropic-workspace-id": "default"},
-        )
-        message = client.messages.create(
-            model=model,
-            max_tokens=180,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        narration = message.content[0].text
+        client = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 180,
+            "messages": [{"role": "user", "content": prompt}],
+        })
+        response = client.invoke_model(modelId=model, body=body)
+        result = json.loads(response["body"].read())
+        narration = result["content"][0]["text"]
         return _clean_ai_narration(narration, fallback)
     except Exception as e:
         import logging
