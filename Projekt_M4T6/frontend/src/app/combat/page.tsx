@@ -1,14 +1,77 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import {
+  type CombatAttackFlowState,
+  type CombatLogEntry,
+  type CombatRoundState,
+  advanceCombatTurnState,
+  combatFlowStepCopy,
   createInitialCombatAttackFlowState,
   createInitialCombatRoundState,
+  readCombatRouteStateSnapshot,
 } from "@/lib/combatState";
 
 export default function CombatPage() {
-  const combatRoundState = createInitialCombatRoundState();
-  const combatAttackFlowState = createInitialCombatAttackFlowState();
+  const [combatRoundState, setCombatRoundState] = useState<CombatRoundState>(
+    createInitialCombatRoundState,
+  );
+  const [combatAttackFlowState, setCombatAttackFlowState] =
+    useState<CombatAttackFlowState>(
+      createInitialCombatAttackFlowState,
+    );
+  const [selectedCombatTargetId, setSelectedCombatTargetId] = useState<
+    string | null
+  >(null);
+  const [combatStatus, setCombatStatus] = useState("Combat-Screen bereit.");
+  const [combatLogEntries, setCombatLogEntries] = useState<CombatLogEntry[]>(
+    [],
+  );
+  const visibleInitiativeOrder = combatRoundState.initiativeOrder;
+  const activeCombatActor = visibleInitiativeOrder.find(
+    (actor) => actor.id === combatRoundState.activeActorId,
+  );
+  const availableCombatTargets =
+    combatRoundState.turnControl?.availableTargets ?? [];
+  const selectedCombatTarget = useMemo(
+    () =>
+      availableCombatTargets.find(
+        (target) => target.id === selectedCombatTargetId,
+      ) ?? null,
+    [availableCombatTargets, selectedCombatTargetId],
+  );
+
+  useEffect(() => {
+    const snapshot = readCombatRouteStateSnapshot();
+
+    if (!snapshot) {
+      return;
+    }
+
+    setCombatRoundState(snapshot.roundState);
+    setCombatAttackFlowState(snapshot.attackFlowState);
+    setSelectedCombatTargetId(snapshot.selectedTargetId);
+    setCombatStatus(snapshot.status || "Combat-Screen bereit.");
+    setCombatLogEntries(snapshot.logEntries);
+  }, []);
+
+  const advanceCombatTurn = () => {
+    setCombatRoundState((currentState) => {
+      const advanceResult = advanceCombatTurnState(currentState);
+
+      if (!advanceResult) {
+        setCombatStatus("Kein Turn-Wechsel moeglich: Initiative fehlt.");
+        return currentState;
+      }
+
+      setSelectedCombatTargetId(null);
+      setCombatAttackFlowState(advanceResult.attackFlowState);
+      setCombatStatus("Naechster Turn wurde im Combat-Screen vorbereitet.");
+
+      return advanceResult.roundState;
+    });
+  };
 
   return (
     <main className="min-h-dvh bg-ink-950 px-4 py-5 text-slate-50">
@@ -85,8 +148,9 @@ export default function CombatPage() {
                   </span>
                 </div>
                 <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                  Noch nicht gestartet. Die spaetere Combat-Route liest hier
-                  InitiativeOrder, aktiven Actor und TurnIndex.
+                  {visibleInitiativeOrder.length > 0
+                    ? `${visibleInitiativeOrder.length} Kreaturen in der Reihenfolge.`
+                    : "Noch nicht gestartet. Die spaetere Combat-Route liest hier InitiativeOrder, aktiven Actor und TurnIndex."}
                 </p>
               </div>
 
@@ -95,7 +159,10 @@ export default function CombatPage() {
                   Aktiver Actor
                 </p>
                 <p className="mt-2 text-lg font-black text-slate-100">
-                  {combatRoundState.activeActorId ?? "Wartet auf Initiative"}
+                  {activeCombatActor?.name ?? "Wartet auf Initiative"}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Ziel: {selectedCombatTarget?.name ?? "noch nicht gewaehlt"}
                 </p>
               </div>
 
@@ -118,8 +185,50 @@ export default function CombatPage() {
                   ))}
                 </div>
                 <p className="mt-2 rounded border border-white/10 bg-black/30 px-2 py-1.5 text-xs text-slate-300">
-                  Status: {combatAttackFlowState.step}
+                  {combatFlowStepCopy[combatAttackFlowState.step]}
                 </p>
+                <p className="mt-2 rounded border border-emerald-400/25 bg-emerald-500/10 px-2 py-1.5 text-xs font-bold text-emerald-100">
+                  {combatStatus}
+                </p>
+                <button
+                  className="mt-2 w-full rounded-md border border-ember-400/45 bg-ember-500 px-3 py-2 text-xs font-black text-ink-950 transition hover:bg-ember-400 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.06] disabled:text-slate-500"
+                  disabled={
+                    combatAttackFlowState.step !== "turnResolved" ||
+                    visibleInitiativeOrder.length === 0
+                  }
+                  onClick={advanceCombatTurn}
+                  type="button"
+                >
+                  Naechsten Turn vorbereiten
+                </button>
+              </div>
+
+              <div className="rounded-md border border-white/10 bg-black/25 p-3">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
+                  Combat-Log
+                </p>
+                {combatLogEntries.length > 0 ? (
+                  <div className="mt-2 space-y-2">
+                    {combatLogEntries.map((entry) => (
+                      <article
+                        className="rounded border border-white/10 bg-white/[0.04] px-2 py-1.5"
+                        key={entry.id}
+                      >
+                        <p className="font-black text-slate-100">
+                          {entry.title}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          {entry.detail}
+                        </p>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                    Noch keine Combat-Ereignisse. Attack Roll, Damage Roll und
+                    Enemy Turn werden spaeter hier protokolliert.
+                  </p>
+                )}
               </div>
             </div>
           </aside>

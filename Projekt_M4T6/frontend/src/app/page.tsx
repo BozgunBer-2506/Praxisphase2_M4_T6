@@ -50,15 +50,18 @@ import {
 } from "@/lib/backendApi";
 import {
   type CombatAttackFlowState,
-  type CombatAttackStep,
   type CombatRoundState,
   type EnemyCombatState,
   type InitiativeActor,
   type LegacySaveEncounterResolveResponse,
+  advanceCombatTurnState,
+  combatFlowStepCopy,
   createCombatAttackFlowStateForActor,
   createInitialCombatAttackFlowState,
   createInitialCombatEnemies,
   createInitialCombatRoundState,
+  getCombatActorDisplayName,
+  writeCombatRouteStateSnapshot,
 } from "@/lib/combatState";
 
 const SAVE_KEY = "falkenwacht.saveStates";
@@ -588,26 +591,14 @@ export default function Home() {
     (actor) => actor.id === combatRoundState.activeActorId,
   );
   const actorName = activeCharacter?.name ?? "Der Charakter";
-  const getCombatActorName = (actorId?: string | null) => {
-    if (!actorId) {
-      return "Unbekannt";
-    }
+  const getCombatActorName = (actorId?: string | null) =>
+    getCombatActorDisplayName(actorId, visibleInitiativeOrder, (combatActorId) => {
+      const frontendCharacterId = toFrontendCharacterId(combatActorId);
 
-    const initiativeActor = visibleInitiativeOrder.find(
-      (actor) => actor.id === actorId,
-    );
-    const frontendCharacterId = toFrontendCharacterId(actorId);
-
-    if (initiativeActor) {
-      return initiativeActor.name;
-    }
-
-    if (frontendCharacterId) {
-      return characters[frontendCharacterId].name;
-    }
-
-    return actorId;
-  };
+      return frontendCharacterId
+        ? characters[frontendCharacterId].name
+        : null;
+    });
   const lastCombatResolution = combatRoundState.lastResolution;
   const lastCombatActorId = lastCombatResolution?.actorId ?? null;
   const isLastResolutionEnemyAction =
@@ -660,14 +651,14 @@ export default function Home() {
   const canResolveBackendDamageRoll =
     combatAttackFlowState.step === "awaitDamageRoll" &&
     requiresBackendDamageRoll;
-  const combatFlowStepCopy: Record<CombatAttackStep, string> = {
-    idle: "Warte auf Kampfrunde.",
-    chooseAction: "Wähle eine Waffe oder einen Spell.",
-    chooseTarget: "Wähle ein Ziel für diese Aktion.",
-    awaitAttackRoll: "Angriffswurf erforderlich. Der Zug pausiert bis zum Hit Roll.",
-    awaitDamageRoll: "Treffer. Schadenwurf erforderlich, bevor der Zug endet.",
-    turnResolved: "Aktion ausgewertet. Der Zug kann beendet werden.",
-    enemyResolving: "DM-KI fuehrt den Gegnerzug verdeckt aus.",
+  const prepareCombatRouteHandoff = () => {
+    writeCombatRouteStateSnapshot({
+      roundState: combatRoundState,
+      attackFlowState: combatAttackFlowState,
+      selectedTargetId: selectedCombatTargetId,
+      status: combatStatus,
+      logEntries: gameLog.slice(0, 12),
+    });
   };
   const backendEncounterState = useMemo<EncounterState | null>(() => {
     if (combatRoundState.round === 0 || visibleInitiativeOrder.length === 0) {
@@ -1620,29 +1611,16 @@ export default function Home() {
 
   const advanceCombatTurn = () => {
     setCombatRoundState((currentState) => {
-      const order = currentState.initiativeOrder;
+      const advanceResult = advanceCombatTurnState(currentState);
 
-      if (order.length === 0 || currentState.round === 0) {
+      if (!advanceResult) {
         return currentState;
       }
 
-      const nextTurnIndex = (currentState.turnIndex + 1) % order.length;
-      const isNewRound = nextTurnIndex === 0;
-      const nextRound = isNewRound ? currentState.round + 1 : currentState.round;
-      const nextActor = order[nextTurnIndex];
-
       setSelectedCombatTargetId(null);
-      setCombatAttackFlowState(
-        createCombatAttackFlowStateForActor(nextActor, nextRound),
-      );
+      setCombatAttackFlowState(advanceResult.attackFlowState);
 
-      return {
-        ...currentState,
-        round: nextRound,
-        activeActorId: nextActor?.id ?? null,
-        turnIndex: nextTurnIndex,
-        awaitingRoll: null,
-      };
+      return advanceResult.roundState;
     });
   };
 
@@ -2488,6 +2466,7 @@ export default function Home() {
               <Link
                 className="inline-flex h-11 items-center gap-2 rounded-md border border-red-400/40 bg-red-500/15 px-3 text-sm font-bold text-red-100 transition hover:border-red-300 hover:bg-red-500/25"
                 href="/combat"
+                onClick={prepareCombatRouteHandoff}
                 title="Combat-Screen öffnen"
               >
                 <Swords className="size-4" />

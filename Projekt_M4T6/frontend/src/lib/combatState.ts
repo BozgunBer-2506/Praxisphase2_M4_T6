@@ -56,11 +56,67 @@ export type CombatAttackFlowState = {
   remainingHp?: number | null;
 };
 
+export type CombatLogEntry = {
+  id: string;
+  title: string;
+  detail: string;
+  total?: number;
+};
+
+export type CombatRouteStateSnapshot = {
+  roundState: CombatRoundState;
+  attackFlowState: CombatAttackFlowState;
+  selectedTargetId: string | null;
+  status: string;
+  logEntries: CombatLogEntry[];
+};
+
+export type CombatTurnAdvanceResult = {
+  roundState: CombatRoundState;
+  attackFlowState: CombatAttackFlowState;
+};
+
 export type LegacySaveEncounterResolveResponse = Omit<
   SaveEncounterResolveResponse,
   "frontend_state"
 > & {
   frontend_state?: FrontendEncounterState;
+};
+
+export const COMBAT_ROUTE_STATE_KEY = "falkenwacht.combatRouteState";
+
+export const combatFlowStepCopy: Record<CombatAttackStep, string> = {
+  idle: "Warte auf Kampfrunde.",
+  chooseAction: "Waehle eine Waffe oder einen Spell.",
+  chooseTarget: "Waehle ein Ziel fuer diese Aktion.",
+  awaitAttackRoll:
+    "Angriffswurf erforderlich. Der Zug pausiert bis zum Hit Roll.",
+  awaitDamageRoll: "Treffer. Schadenwurf erforderlich, bevor der Zug endet.",
+  turnResolved: "Aktion ausgewertet. Der Zug kann beendet werden.",
+  enemyResolving: "DM-KI fuehrt den Gegnerzug verdeckt aus.",
+};
+
+export const getCombatActorDisplayName = (
+  actorId: string | null | undefined,
+  initiativeOrder: InitiativeActor[],
+  resolveCharacterName?: (actorId: string) => string | null,
+) => {
+  if (!actorId) {
+    return "Unbekannt";
+  }
+
+  const initiativeActor = initiativeOrder.find((actor) => actor.id === actorId);
+  const characterName = resolveCharacterName?.(actorId);
+
+  if (initiativeActor) {
+    return initiativeActor.name;
+  }
+
+  if (characterName) {
+    return characterName;
+  }
+
+  return actorId;
 };
 
 export const createInitialCombatEnemies = (): EnemyCombatState[] => [
@@ -123,3 +179,58 @@ export const createCombatAttackFlowStateForActor = (
         ? "enemyResolving"
         : "chooseAction",
 });
+
+export const advanceCombatTurnState = (
+  currentState: CombatRoundState,
+): CombatTurnAdvanceResult | null => {
+  const order = currentState.initiativeOrder;
+
+  if (order.length === 0 || currentState.round === 0) {
+    return null;
+  }
+
+  const nextTurnIndex = (currentState.turnIndex + 1) % order.length;
+  const isNewRound = nextTurnIndex === 0;
+  const nextRound = isNewRound ? currentState.round + 1 : currentState.round;
+  const nextActor = order[nextTurnIndex];
+
+  return {
+    roundState: {
+      ...currentState,
+      round: nextRound,
+      activeActorId: nextActor?.id ?? null,
+      turnIndex: nextTurnIndex,
+      awaitingRoll: null,
+    },
+    attackFlowState: createCombatAttackFlowStateForActor(nextActor, nextRound),
+  };
+};
+
+export const writeCombatRouteStateSnapshot = (
+  snapshot: CombatRouteStateSnapshot,
+) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(
+    COMBAT_ROUTE_STATE_KEY,
+    JSON.stringify(snapshot),
+  );
+};
+
+export const readCombatRouteStateSnapshot = () => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const storedSnapshot = window.localStorage.getItem(COMBAT_ROUTE_STATE_KEY);
+
+    return storedSnapshot
+      ? (JSON.parse(storedSnapshot) as CombatRouteStateSnapshot)
+      : null;
+  } catch {
+    return null;
+  }
+};
