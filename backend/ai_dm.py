@@ -259,7 +259,9 @@ def generate_ai_dm_narration(
         )
         narration = message.content[0].text
         return _clean_ai_narration(narration, fallback)
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("Bedrock error: %s", e)
         return fallback
 
 
