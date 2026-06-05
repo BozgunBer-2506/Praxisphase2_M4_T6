@@ -3,6 +3,16 @@ from sqlalchemy.orm import relationship
 from database import Base
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True)
+    username = Column(String, nullable=False, unique=True)
+    hashed_password = Column(String, nullable=False)
+
+    save_games = relationship("SaveGame", back_populates="user")
+
+
 class Character(Base):
     __tablename__ = "characters"
 
@@ -39,7 +49,9 @@ class SaveGame(Base):
     character_id = Column(String, nullable=False)
     scene_number = Column(Integer, nullable=False)
     state = Column(JSON, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
+    user = relationship("User", back_populates="save_games")
     encounters = relationship("Encounter", back_populates="save_game")
 
 
