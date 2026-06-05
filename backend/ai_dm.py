@@ -248,7 +248,7 @@ def generate_ai_dm_narration(
 
     try:
         client = anthropic.Anthropic(
-            api_key=provide_token(),
+            api_key=provide_token(region="eu-central-1"),
             base_url=BEDROCK_BASE_URL,
             default_headers={"anthropic-workspace-id": "default"},
         )
