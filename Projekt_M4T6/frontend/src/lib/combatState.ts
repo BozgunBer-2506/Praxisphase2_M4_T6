@@ -74,6 +74,7 @@ export type CombatRouteStateSnapshot = {
 export type CombatTurnAdvanceResult = {
   roundState: CombatRoundState;
   attackFlowState: CombatAttackFlowState;
+  isNewRound: boolean;
 };
 
 export type LegacySaveEncounterResolveResponse = Omit<
@@ -132,6 +133,15 @@ export const createInitialCombatEnemies = (): EnemyCombatState[] => [
   {
     id: "shadow-raider-2",
     name: "Schattenraeuber B",
+    currentHp: 16,
+    maxHp: 16,
+    ac: 14,
+    speed: 30,
+    conditions: [],
+  },
+  {
+    id: "shadow-raider-3",
+    name: "Schattenraeuber C",
     currentHp: 16,
     maxHp: 16,
     ac: 14,
@@ -203,6 +213,7 @@ export const advanceCombatTurnState = (
       awaitingRoll: null,
     },
     attackFlowState: createCombatAttackFlowStateForActor(nextActor, nextRound),
+    isNewRound,
   };
 };
 
