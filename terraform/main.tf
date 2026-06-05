@@ -102,15 +102,15 @@ resource "aws_iam_role_policy_attachment" "ecr_read" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-resource "aws_iam_role_policy" "bedrock_mantle" {
-  name = "bedrock-mantle-access"
+resource "aws_iam_role_policy" "bedrock_access" {
+  name = "bedrock-access"
   role = aws_iam_role.ec2_role.name
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = ["bedrock-mantle:*", "bedrock:*"]
+      Action   = ["bedrock:*", "bedrock-mantle:*", "aws-marketplace:ViewSubscriptions", "aws-marketplace:Subscribe", "aws-marketplace:Unsubscribe"]
       Resource = "*"
     }]
   })
