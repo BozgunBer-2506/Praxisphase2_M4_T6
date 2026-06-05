@@ -1,9 +1,14 @@
 import json
-import os
-import urllib.request
 
+try:
+    import anthropic
+    from aws_bedrock_token_generator import provide_token
+    _BEDROCK_AVAILABLE = True
+except ImportError:
+    _BEDROCK_AVAILABLE = False
 
-DEFAULT_AI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+DEFAULT_AI_MODEL = "anthropic.claude-haiku-4-5"
+BEDROCK_BASE_URL = "https://bedrock-mantle.eu-central-1.api.aws/anthropic"
 
 HELP_COMMANDS = {"/help", "/lore", "/rules", "/recap"}
 BLOCKED_EXTERNAL_LORE_TERMS = ("the originals", "new orleans", "new-orleans", "mikaelson")
@@ -228,8 +233,8 @@ def generate_ai_dm_narration(
     model: str = DEFAULT_AI_MODEL,
 ) -> str:
     fallback = fallback_narration(scene_title, player_choice, rules_result)
-    key = api_key or os.getenv("OPENAI_API_KEY")
-    if not key:
+
+    if not _BEDROCK_AVAILABLE:
         return fallback
 
     prompt = build_ai_dm_prompt(
@@ -241,27 +246,19 @@ def generate_ai_dm_narration(
         inventory=inventory,
     )
 
-    payload = json.dumps(
-        {
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 180,
-            "temperature": 0.8,
-        }
-    ).encode()
-
-    request = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
-        data=payload,
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
-        method="POST",
-    )
-
     try:
-        with urllib.request.urlopen(request, timeout=8) as response:
-            data = json.loads(response.read())
-            narration = data["choices"][0]["message"]["content"]
-            return _clean_ai_narration(narration, fallback)
+        client = anthropic.Anthropic(
+            api_key=provide_token(),
+            base_url=BEDROCK_BASE_URL,
+            default_headers={"anthropic-workspace-id": "default"},
+        )
+        message = client.messages.create(
+            model=model,
+            max_tokens=180,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        narration = message.content[0].text
+        return _clean_ai_narration(narration, fallback)
     except Exception:
         return fallback
 
