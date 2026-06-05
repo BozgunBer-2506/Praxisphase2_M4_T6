@@ -5,6 +5,74 @@ import urllib.request
 
 DEFAULT_AI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
+HELP_COMMANDS = {"/help", "/lore", "/rules", "/recap"}
+BLOCKED_EXTERNAL_LORE_TERMS = ("the originals", "new orleans", "new-orleans", "mikaelson")
+
+
+def build_ai_dm_help_response(
+    message: str,
+    scene_context: dict | None = None,
+    rules_result: dict | None = None,
+    character_state: dict | None = None,
+    inventory: list[dict] | None = None,
+) -> dict:
+    command = _normalize_help_command(message)
+    if _contains_blocked_external_lore(message):
+        return _help_response(
+            command=command,
+            answer=(
+                "Ich kann nur zu Falkenwacht, der aktuellen Szene, Bedienung und erklaerender "
+                "DnD-5e-Regelhilfe antworten. Externe Lore wie The Originals oder New Orleans "
+                "gehoert nicht zu diesem Projektkontext."
+            ),
+            topics=["scope"],
+        )
+
+    if command == "/help":
+        return _help_response(
+            command=command,
+            answer=(
+                "Verfuegbare DM-Hilfe: /help zeigt diese Uebersicht, /lore erklaert Falkenwacht-Kontext, "
+                "/rules erklaert sichtbare DnD-5e-Mechanik, /recap fasst den aktuellen Stand zusammen. "
+                "Freie Fragen sind moeglich, solange sie Szene, Lore, Spielmechanik oder Bedienung betreffen."
+            ),
+            topics=["help", "commands", "usage"],
+        )
+    if command == "/lore":
+        scene_title = (scene_context or {}).get("title") or "Falkenwacht"
+        location = (scene_context or {}).get("location") or "aktueller Schauplatz"
+        return _help_response(
+            command=command,
+            answer=(
+                f"Lore-Hilfe: Du befindest dich im Falkenwacht-Kontext. Aktuelle Szene: {scene_title}. "
+                f"Schauplatz: {location}. Ich erklaere nur bekannte Hinweise aus Szene und Backend-Kontext "
+                "und erfinde keine fremden Fraktionen, Serien-Lore oder neue Items."
+            ),
+            topics=["lore", "falkenwacht", "scene"],
+        )
+    if command == "/rules":
+        return _help_response(
+            command=command,
+            answer=_rules_help_text(rules_result),
+            topics=["rules", "dnd5e", "backend"],
+        )
+    if command == "/recap":
+        return _help_response(
+            command=command,
+            answer=_recap_text(scene_context, rules_result, character_state, inventory),
+            topics=["recap", "state", "scene"],
+        )
+
+    return _help_response(
+        command="free_question",
+        answer=(
+            "Ich kann deine Frage beantworten, wenn sie sich auf die aktuelle Szene, Falkenwacht-Lore, "
+            "sichtbare Backend-Regelergebnisse, DnD-5e-Grundmechanik oder Bedienung bezieht. "
+            "Ich veraendere dabei keine HP, Wuerfe, Treffer, Schaden, Inventory oder Speicherstaende."
+        ),
+        topics=["free_question", "scope"],
+    )
+
 
 def build_ai_dm_prompt(
     scene_title: str,
@@ -29,6 +97,67 @@ def build_ai_dm_prompt(
         f"Inventory-Kontext: {json.dumps(inventory, ensure_ascii=False)}\n"
         "Antwort: 2-4 Saetze Erzaehlertext."
     )
+
+
+def _help_response(command: str, answer: str, topics: list[str]) -> dict:
+    return {
+        "command": command,
+        "answer": answer,
+        "topics": topics,
+        "state_locked": True,
+        "allowed_scope": ["falkenwacht", "current_scene", "backend_rules", "dnd5e_help", "usage"],
+    }
+
+
+def _normalize_help_command(message: str) -> str:
+    first_token = message.strip().split(maxsplit=1)[0].lower() if message.strip() else "/help"
+    return first_token if first_token in HELP_COMMANDS else "free_question"
+
+
+def _contains_blocked_external_lore(message: str) -> bool:
+    normalized = message.lower()
+    return any(term in normalized for term in BLOCKED_EXTERNAL_LORE_TERMS)
+
+
+def _rules_help_text(rules_result: dict | None) -> str:
+    if not rules_result:
+        return (
+            "Regelhilfe: Das Backend wuerfelt und bewertet Regeln. Ein d20-Wurf plus Modifikator "
+            "wird gegen eine Schwierigkeit oder Armor Class verglichen. Das Frontend zeigt nur an."
+        )
+    if isinstance(rules_result.get("attack"), dict):
+        attack = rules_result["attack"]
+        hit_text = "Treffer" if attack.get("hit") else "Fehlschlag"
+        return (
+            f"Regelhilfe Angriff: d20 {attack.get('roll')} plus Modifikator {attack.get('modifier')} "
+            f"ergibt {attack.get('total')} gegen AC {attack.get('target_ac')}: {hit_text}. "
+            "Schaden und HP-Aenderungen werden nur vom Backend berechnet."
+        )
+    if "success" in rules_result:
+        return (
+            f"Regelhilfe Probe: Gesamtwert {rules_result.get('total')} gegen DC {rules_result.get('dc', 'unbekannt')}. "
+            "Das Backend entscheidet Erfolg oder Fehlschlag."
+        )
+    return "Regelhilfe: Das sichtbare Regelergebnis wurde vom Backend validiert und darf nur erklaert werden."
+
+
+def _recap_text(
+    scene_context: dict | None,
+    rules_result: dict | None,
+    character_state: dict | None,
+    inventory: list[dict] | None,
+) -> str:
+    scene_title = (scene_context or {}).get("title") or "aktuelle Szene"
+    hp = (character_state or {}).get("current_hp")
+    max_hp = (character_state or {}).get("max_hp")
+    inventory_count = len(inventory or [])
+    parts = [f"Recap: Aktuell bist du in {scene_title}."]
+    if hp is not None and max_hp is not None:
+        parts.append(f"Sichtbare HP: {hp}/{max_hp}.")
+    if rules_result:
+        parts.append("Das letzte sichtbare Regelergebnis liegt vor und bleibt backendvalidiert.")
+    parts.append(f"Inventory-Eintraege im Kontext: {inventory_count}.")
+    return " ".join(parts)
 
 
 def fallback_narration(scene_title: str, player_choice: str, rules_result: dict) -> str:

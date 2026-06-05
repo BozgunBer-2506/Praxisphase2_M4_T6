@@ -39,9 +39,9 @@ import {
   type InventoryStateItem,
   type InventoryViewItem,
   type SaveGameState,
+  askAiDmHelp,
   createOrUpdateSave,
   getInventoryView,
-  narrateWithAiDm,
   resolveCombat,
   resolveSaveEncounterAttackRoll,
   resolveSaveEncounterAutoTurn,
@@ -277,6 +277,10 @@ type DmMessage = {
   id: string;
   sender: "Spieler" | "DM";
   text: string;
+  command?: string;
+  topics?: string[];
+  allowedScope?: string[];
+  stateLocked?: boolean;
 };
 
 type GameLogEntry = {
@@ -2051,8 +2055,8 @@ export default function Home() {
     }
   };
 
-  const sendDmMessage = async () => {
-    const trimmedInput = dmInput.trim();
+  const sendDmHelpMessage = async (message: string) => {
+    const trimmedInput = message.trim();
 
     if (!trimmedInput) {
       return;
@@ -2069,9 +2073,14 @@ export default function Home() {
     setDmInput("");
 
     try {
-      const response = await narrateWithAiDm({
-        scene_title: currentScene.title,
-        player_choice: trimmedInput,
+      const response = await askAiDmHelp({
+        message: trimmedInput,
+        slot_name: BACKEND_SLOT_NAME,
+        scene_context: {
+          id: currentScene.id,
+          title: currentScene.title,
+          chapter: currentScene.chapter,
+        },
         rules_result: {
           scene: currentScene.id,
           last_roll: rollResult,
@@ -2085,19 +2094,20 @@ export default function Home() {
         {
           id: createId(),
           sender: "DM",
-          text: shouldUseLocalDmAnswer(response.narration)
-            ? buildLocalDmAnswer(trimmedInput)
-            : response.narration,
+          text: response.answer,
+          command: response.command,
+          topics: response.topics,
+          allowedScope: response.allowed_scope,
+          stateLocked: response.state_locked,
         },
       ]);
-      applyHudEvents(response.hud_events);
     } catch (error) {
       setDmMessages((messages) => [
         ...messages,
         {
           id: createId(),
           sender: "DM",
-          text: "Backend-DM ist lokal noch nicht erreichbar. Starte FastAPI auf Port 8000, dann wird diese Frage an /ai-dm/narrate gesendet.",
+          text: "Backend-DM ist lokal noch nicht erreichbar. Starte FastAPI auf Port 8000, dann wird diese Frage an /ai-dm/help gesendet.",
         },
       ]);
       addGameLog({
@@ -2105,6 +2115,16 @@ export default function Home() {
         detail: error instanceof Error ? error.message : "Unbekannter Fehler",
       });
     }
+  };
+
+  const sendDmMessage = async () => {
+    const trimmedInput = dmInput.trim();
+
+    if (!trimmedInput) {
+      return;
+    }
+
+    await sendDmHelpMessage(trimmedInput);
   };
 
   useEffect(() => {
@@ -3311,11 +3331,53 @@ export default function Home() {
                         {message.sender}
                       </p>
                       <p>{message.text}</p>
+                      {message.sender === "DM" && message.command ? (
+                        <div className="mt-2 flex flex-wrap gap-1 text-[0.6rem] font-bold uppercase tracking-[0.08em] text-slate-400">
+                          <span className="rounded border border-white/10 bg-black/20 px-1.5 py-1">
+                            {message.command}
+                          </span>
+                          {message.stateLocked ? (
+                            <span className="rounded border border-emerald-400/30 bg-emerald-500/10 px-1.5 py-1 text-emerald-200">
+                              State locked
+                            </span>
+                          ) : null}
+                          {message.topics?.slice(0, 3).map((topic) => (
+                            <span
+                              className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-1"
+                              key={topic}
+                            >
+                              {topic}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                      {message.sender === "DM" &&
+                      message.allowedScope &&
+                      message.allowedScope.length > 0 ? (
+                        <p className="mt-1 text-[0.62rem] text-slate-500">
+                          Scope: {message.allowedScope.slice(0, 4).join(", ")}
+                        </p>
+                      ) : null}
                     </div>
                   ))}
                 </div>
 
-                <div className="flex gap-2 border-t border-white/10 p-3">
+                <div className="border-t border-white/10 p-3">
+                  <div className="mb-2 grid grid-cols-4 gap-1">
+                    {(["/help", "/lore", "/rules", "/recap"] as const).map(
+                      (command) => (
+                        <button
+                          className="rounded-md border border-white/10 bg-white/[0.06] px-2 py-1.5 text-[0.65rem] font-bold text-slate-200 transition hover:border-ember-400/70 hover:bg-ember-500/15"
+                          key={command}
+                          onClick={() => void sendDmHelpMessage(command)}
+                          type="button"
+                        >
+                          {command}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                  <div className="flex gap-2">
                   <input
                     className="h-10 min-w-0 flex-1 rounded-md border border-white/10 bg-white/[0.06] px-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
                     onChange={(event) => setDmInput(event.target.value)}
@@ -3335,6 +3397,7 @@ export default function Home() {
                   >
                     <Send className="size-4" />
                   </button>
+                  </div>
                 </div>
               </aside>
             ) : null}

@@ -25,6 +25,7 @@ dist/
 .next/
 .vite/
 *.local
+*.tsbuildinfo
 
 # Docker
 docker-compose.override.yml

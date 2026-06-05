@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import Session
 
-from ai_dm import build_hud_events, generate_ai_dm_narration
+from ai_dm import build_ai_dm_help_response, build_hud_events, generate_ai_dm_narration
 from characters import CHARACTERS
 from combat import (
     advance_turn,
@@ -359,6 +359,23 @@ class AiDmNarrationResponse(BaseModel):
     visible_rules_result: dict
     hud_events: list[dict]
     state_locked: bool
+
+
+class AiDmHelpRequest(BaseModel):
+    message: str = Field(min_length=1)
+    slot_name: str | None = None
+    scene_context: dict = Field(default_factory=dict)
+    rules_result: dict = Field(default_factory=dict)
+    character_state: dict = Field(default_factory=dict)
+    inventory: list[dict] = Field(default_factory=list)
+
+
+class AiDmHelpResponse(BaseModel):
+    command: str
+    answer: str
+    topics: list[str]
+    state_locked: bool
+    allowed_scope: list[str]
 
 
 class InventoryItem(BaseModel):
@@ -964,6 +981,34 @@ def ai_dm_narrate(request: AiDmNarrationRequest):
         "hud_events": build_hud_events(request.rules_result),
         "state_locked": True,
     }
+
+
+@app.post("/ai-dm/help", response_model=AiDmHelpResponse)
+def ai_dm_help(request: AiDmHelpRequest, db: Session = Depends(get_db)):
+    scene_context = dict(request.scene_context)
+    character_state = dict(request.character_state)
+    inventory = list(request.inventory)
+    if request.slot_name:
+        save_game = db.query(SaveGame).filter(SaveGame.slot_name == request.slot_name).first()
+        if not save_game:
+            raise HTTPException(status_code=404, detail="Save game not found")
+        scene = SCENES.get(save_game.scene_number)
+        if scene:
+            scene_context = {
+                "scene_number": scene["scene_number"],
+                "title": scene["title"],
+                "narrative": scene.get("narrative"),
+            }
+        character_state = save_game.state.get("main_character", character_state)
+        inventory = save_game.state.get("inventory", inventory)
+
+    return build_ai_dm_help_response(
+        message=request.message,
+        scene_context=scene_context,
+        rules_result=request.rules_result,
+        character_state=character_state,
+        inventory=inventory,
+    )
 
 
 @app.get("/inventory/catalog")

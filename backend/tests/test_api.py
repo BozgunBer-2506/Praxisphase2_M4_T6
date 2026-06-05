@@ -960,7 +960,7 @@ def test_encounter_auto_turn_resolve_routes_hero_action():
     assert body["rules_result"]["target_id"] == "bandit"
     assert body["state"]["active_participant_id"] in {"ayane", "bandit"}
     assert body["hud_events"][0]["type"] == "attack_roll"
-    assert body["frontend_state"]["round"] == 1
+    assert body["frontend_state"]["round"] == body["state"]["round_number"]
     assert body["frontend_state"]["activeActorId"] == body["state"]["active_participant_id"]
     assert body["frontend_state"]["activeActor"]["id"] == body["state"]["active_participant_id"]
     assert body["frontend_state"]["participants"][0]["id"] == "ayane"
@@ -1797,6 +1797,136 @@ def test_ai_dm_narrate_returns_text_and_visible_rules(monkeypatch):
     assert body["hud_events"][1]["payload"]["total"] == 7
     assert body["state_locked"] is True
     assert captured_context["enemies"] == payload["enemies"]
+
+
+def test_ai_dm_help_returns_command_help_without_state_changes():
+    response = client.post("/ai-dm/help", json={"message": "/help"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["command"] == "/help"
+    assert body["state_locked"] is True
+    assert "/lore" in body["answer"]
+    assert "/rules" in body["answer"]
+    assert "falkenwacht" in body["allowed_scope"]
+
+
+def test_ai_dm_help_rules_explains_visible_backend_result():
+    response = client.post(
+        "/ai-dm/help",
+        json={
+            "message": "/rules",
+            "rules_result": {
+                "attack": {
+                    "roll": 14,
+                    "modifier": 5,
+                    "total": 19,
+                    "target_ac": 15,
+                    "hit": True,
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["command"] == "/rules"
+    assert body["state_locked"] is True
+    assert "AC 15" in body["answer"]
+    assert "Treffer" in body["answer"]
+
+
+def test_ai_dm_help_blocks_external_lore_scope():
+    response = client.post(
+        "/ai-dm/help",
+        json={"message": "Erklaer mir The Originals in New Orleans"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state_locked"] is True
+    assert body["topics"] == ["scope"]
+    assert "nur zu Falkenwacht" in body["answer"]
+
+
+def test_ai_dm_help_recap_loads_save_context():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    main.app.dependency_overrides[main.get_db] = override_get_db
+    try:
+        save_payload = {
+            "slot_name": "dm-help-recap",
+            "character_id": "ayane",
+            "scene_number": 1,
+            "state": {
+                "main_character": {
+                    "character_id": "ayane",
+                    "current_hp": 18,
+                    "max_hp": 28,
+                },
+                "story_flags": {},
+                "inventory": [{"item_id": "torch", "name": "Torch", "quantity": 1}],
+            },
+        }
+
+        create_response = client.post("/saves", json=save_payload)
+        help_response = client.post(
+            "/ai-dm/help",
+            json={"message": "/recap", "slot_name": "dm-help-recap"},
+        )
+
+        assert create_response.status_code == 200
+        assert help_response.status_code == 200
+        body = help_response.json()
+        assert body["command"] == "/recap"
+        assert body["state_locked"] is True
+        assert "Der alte Gang" in body["answer"]
+        assert "18/28" in body["answer"]
+        assert "Inventory-Eintraege im Kontext: 1" in body["answer"]
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_ai_dm_help_rejects_unknown_save_context():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    main.app.dependency_overrides[main.get_db] = override_get_db
+    try:
+        response = client.post(
+            "/ai-dm/help",
+            json={"message": "/recap", "slot_name": "missing-save"},
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Save game not found"
+    finally:
+        main.app.dependency_overrides.clear()
 
 
 def test_inventory_catalog_contains_item_actions():

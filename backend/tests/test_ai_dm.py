@@ -1,7 +1,69 @@
 import json
 
 import ai_dm
-from ai_dm import build_ai_dm_prompt, build_hud_events, fallback_narration, generate_ai_dm_narration
+from ai_dm import (
+    build_ai_dm_help_response,
+    build_ai_dm_prompt,
+    build_hud_events,
+    fallback_narration,
+    generate_ai_dm_narration,
+)
+
+
+def test_build_ai_dm_help_response_lists_allowed_commands_without_state_changes():
+    response = build_ai_dm_help_response("/help")
+
+    assert response["command"] == "/help"
+    assert response["state_locked"] is True
+    assert "/lore" in response["answer"]
+    assert "/rules" in response["answer"]
+    assert "Falkenwacht" in response["answer"]
+
+
+def test_build_ai_dm_rules_response_explains_backend_attack_result():
+    response = build_ai_dm_help_response(
+        "/rules",
+        rules_result={
+            "attack": {
+                "roll": 14,
+                "modifier": 5,
+                "total": 19,
+                "target_ac": 15,
+                "hit": True,
+            }
+        },
+    )
+
+    assert response["command"] == "/rules"
+    assert response["state_locked"] is True
+    assert "AC 15" in response["answer"]
+    assert "Treffer" in response["answer"]
+    assert "Backend" in response["answer"]
+
+
+def test_build_ai_dm_recap_response_uses_current_context_only():
+    response = build_ai_dm_help_response(
+        "/recap",
+        scene_context={"title": "Innere Handelsroute"},
+        rules_result={"success": True},
+        character_state={"current_hp": 18, "max_hp": 28},
+        inventory=[{"item_id": "torch"}],
+    )
+
+    assert response["command"] == "/recap"
+    assert response["state_locked"] is True
+    assert "Innere Handelsroute" in response["answer"]
+    assert "18/28" in response["answer"]
+    assert "Inventory-Eintraege" in response["answer"]
+
+
+def test_build_ai_dm_help_response_blocks_external_lore():
+    response = build_ai_dm_help_response("Was ist mit The Originals in New Orleans?")
+
+    assert response["state_locked"] is True
+    assert response["topics"] == ["scope"]
+    assert "nur zu Falkenwacht" in response["answer"]
+    assert "New Orleans" in response["answer"]
 
 
 def test_prompt_forbids_ai_state_changes():

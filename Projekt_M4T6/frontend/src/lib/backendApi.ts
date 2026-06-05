@@ -76,6 +76,23 @@ export type AiDmNarrationResponse = {
   state_locked: boolean;
 };
 
+export type AiDmHelpRequest = {
+  message: string;
+  slot_name?: string;
+  scene_context?: Record<string, unknown>;
+  rules_result?: Record<string, unknown>;
+  character_state?: Record<string, unknown>;
+  inventory?: InventoryStateItem[];
+};
+
+export type AiDmHelpResponse = {
+  command: string;
+  answer: string;
+  topics: string[];
+  state_locked: boolean;
+  allowed_scope: string[];
+};
+
 export type CombatResolveRequest = {
   character_id: string;
   attack_modifier: number;
@@ -292,6 +309,19 @@ export async function narrateWithAiDm(payload: {
     method: "POST",
     body: {
       enemies: [],
+      inventory: [],
+      ...payload,
+    },
+  });
+}
+
+export async function askAiDmHelp(payload: AiDmHelpRequest) {
+  return request<AiDmHelpResponse>("/ai-dm/help", {
+    method: "POST",
+    body: {
+      scene_context: {},
+      rules_result: {},
+      character_state: {},
       inventory: [],
       ...payload,
     },
