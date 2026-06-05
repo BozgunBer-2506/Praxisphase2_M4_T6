@@ -1,10 +1,11 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Header
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import Session
 
+from auth import create_access_token, decode_token, hash_password, verify_password
 from ai_dm import build_ai_dm_help_response, build_hud_events, generate_ai_dm_narration
 from characters import CHARACTERS
 from combat import (
@@ -31,7 +32,7 @@ from dice import (
     skill_check,
     stat_modifier,
 )
-from models import Encounter, EncounterTurnLog, SaveGame
+from models import Encounter, EncounterTurnLog, SaveGame, User
 
 
 @asynccontextmanager
@@ -44,6 +45,52 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="DnD Visual Novel API", lifespan=lifespan)
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=3)
+    password: str = Field(min_length=6)
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+def get_current_user(authorization: str | None = Header(default=None), db: Session = Depends(get_db)) -> User | None:
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization[7:]
+    payload = decode_token(token)
+    if not payload:
+        return None
+    return db.query(User).filter(User.id == int(payload["sub"])).first()
+
+
+@app.post("/auth/register", status_code=201)
+def register(request: RegisterRequest, db: Session = Depends(get_db)):
+    if db.query(User).filter(User.username == request.username).first():
+        raise HTTPException(status_code=400, detail="Username already taken")
+    user = User(username=request.username, hashed_password=hash_password(request.password))
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return {"id": user.id, "username": user.username, "token": create_access_token(user.id, user.username)}
+
+
+@app.post("/auth/login")
+def login(request: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == request.username).first()
+    if not user or not verify_password(request.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return {"id": user.id, "username": user.username, "token": create_access_token(user.id, user.username)}
+
+
+@app.get("/auth/me")
+def me(current_user: User | None = Depends(get_current_user)):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return {"id": current_user.id, "username": current_user.username}
 
 
 def build_frontend_encounter_state(
