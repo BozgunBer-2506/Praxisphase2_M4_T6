@@ -48,6 +48,21 @@ import {
   resolveSaveEncounterDamageRoll,
   runSaveInventoryAction,
 } from "@/lib/backendApi";
+import {
+  type CombatAttackFlowState,
+  type CombatRoundState,
+  type EnemyCombatState,
+  type InitiativeActor,
+  type LegacySaveEncounterResolveResponse,
+  advanceCombatTurnState,
+  combatFlowStepCopy,
+  createCombatAttackFlowStateForActor,
+  createInitialCombatAttackFlowState,
+  createInitialCombatEnemies,
+  createInitialCombatRoundState,
+  getCombatActorDisplayName,
+  writeCombatRouteStateSnapshot,
+} from "@/lib/combatState";
 
 const SAVE_KEY = "falkenwacht.saveStates";
 const LAST_SAVE_KEY = "falkenwacht.lastSave";
@@ -57,6 +72,8 @@ const CAMPAIGN_TITLE = "Falkenwacht - Die Korruption der Greifenstadt";
 const WORD_REVEAL_MS = 85;
 const diceTypes = [4, 6, 8, 10, 12, 20, 100] as const;
 const BACKEND_SLOT_NAME = "autosave";
+const BACKEND_COMBAT_SCENE_NUMBER = 3;
+const BACKEND_MAX_SCENE_NUMBER = 3;
 
 const createId = () =>
   globalThis.crypto?.randomUUID?.() ??
@@ -75,6 +92,24 @@ const toFrontendCharacterId = (characterId: string): CharacterId | null => {
   }
 
   return null;
+};
+
+const getBackendSceneNumber = (sceneId: string) => {
+  if (sceneId.startsWith("kampf-") || sceneId === "hinterhalt-handelsroute") {
+    return BACKEND_COMBAT_SCENE_NUMBER;
+  }
+
+  const frontendSceneNumber =
+    scenes.findIndex((scene) => scene.id === sceneId) + 1;
+
+  if (
+    frontendSceneNumber >= 1 &&
+    frontendSceneNumber <= BACKEND_MAX_SCENE_NUMBER
+  ) {
+    return frontendSceneNumber;
+  }
+
+  return 1;
 };
 
 const parseDiceFormula = (formula: string) => {
@@ -295,114 +330,6 @@ type PendingCheck = {
   choice: Choice;
   checks: SkillCheck[];
 };
-
-type InitiativeActor = {
-  id: string;
-  name: string;
-  kind: "player" | "companion" | "enemy";
-  total?: number;
-};
-
-type EnemyCombatState = {
-  id: string;
-  name: string;
-  currentHp: number;
-  maxHp: number;
-  ac: number;
-  speed: number;
-  conditions: string[];
-};
-
-type CombatRoundState = {
-  encounterId: string;
-  round: number;
-  activeActorId: string | null;
-  turnIndex: number;
-  initiativeOrder: InitiativeActor[];
-  enemies: EnemyCombatState[];
-  awaitingRoll: "attack" | "damage" | "save" | "initiative" | null;
-  lastBackendEvents: HudEvent[];
-  turnControl: FrontendEncounterState["turnControl"] | null;
-  lastResolution: FrontendEncounterState["lastResolution"];
-};
-
-type CombatAttackStep =
-  | "idle"
-  | "chooseAction"
-  | "chooseTarget"
-  | "awaitAttackRoll"
-  | "awaitDamageRoll"
-  | "turnResolved"
-  | "enemyResolving";
-
-type CombatAttackFlowState = {
-  step: CombatAttackStep;
-  actorId: string | null;
-  actionName: string | null;
-  attackFormula: string | null;
-  damageFormula: string | null;
-  targetId: string | null;
-  attackTotal: number | null;
-  attackHit: boolean | null;
-  damageTotal?: number | null;
-  remainingHp?: number | null;
-};
-
-const createInitialCombatEnemies = (): EnemyCombatState[] => [
-  {
-    id: "shadow-raider-1",
-    name: "Schattenräuber A",
-    currentHp: 16,
-    maxHp: 16,
-    ac: 14,
-    speed: 30,
-    conditions: [],
-  },
-  {
-    id: "shadow-raider-2",
-    name: "Schattenräuber B",
-    currentHp: 16,
-    maxHp: 16,
-    ac: 14,
-    speed: 30,
-    conditions: [],
-  },
-];
-
-const createInitialCombatRoundState = (): CombatRoundState => ({
-  encounterId: "inner-trade-route-ambush",
-  round: 0,
-  activeActorId: null,
-  turnIndex: 0,
-  initiativeOrder: [],
-  enemies: createInitialCombatEnemies(),
-  awaitingRoll: null,
-  lastBackendEvents: [],
-  turnControl: null,
-  lastResolution: null,
-});
-
-const createInitialCombatAttackFlowState = (): CombatAttackFlowState => ({
-  step: "idle",
-  actorId: null,
-  actionName: null,
-  attackFormula: null,
-  damageFormula: null,
-  targetId: null,
-  attackTotal: null,
-  attackHit: null,
-  damageTotal: null,
-  remainingHp: null,
-});
-
-const createCombatAttackFlowStateForActor = (
-  actor: InitiativeActor | undefined,
-  round: number,
-): CombatAttackFlowState => ({
-  ...createInitialCombatAttackFlowState(),
-  actorId: actor?.id ?? null,
-  step: round <= 0 ? "idle" : actor?.kind === "enemy" ? "enemyResolving" : "chooseAction",
-});
 
 const findScene = (sceneId: string) =>
   scenes.find((scene) => scene.id === sceneId) ?? scenes[0];
@@ -664,26 +591,14 @@ export default function Home() {
     (actor) => actor.id === combatRoundState.activeActorId,
   );
   const actorName = activeCharacter?.name ?? "Der Charakter";
-  const getCombatActorName = (actorId?: string | null) => {
-    if (!actorId) {
-      return "Unbekannt";
-    }
+  const getCombatActorName = (actorId?: string | null) =>
+    getCombatActorDisplayName(actorId, visibleInitiativeOrder, (combatActorId) => {
+      const frontendCharacterId = toFrontendCharacterId(combatActorId);
 
-    const initiativeActor = visibleInitiativeOrder.find(
-      (actor) => actor.id === actorId,
-    );
-    const frontendCharacterId = toFrontendCharacterId(actorId);
-
-    if (initiativeActor) {
-      return initiativeActor.name;
-    }
-
-    if (frontendCharacterId) {
-      return characters[frontendCharacterId].name;
-    }
-
-    return actorId;
-  };
+      return frontendCharacterId
+        ? characters[frontendCharacterId].name
+        : null;
+    });
   const lastCombatResolution = combatRoundState.lastResolution;
   const lastCombatActorId = lastCombatResolution?.actorId ?? null;
   const isLastResolutionEnemyAction =
@@ -698,6 +613,23 @@ export default function Home() {
       (actor) =>
         actor.id === lastCombatActorId && actor.kind !== "enemy",
     );
+  const lastCombatAttack = lastCombatResolution?.attack ?? null;
+  const lastCombatDamage = lastCombatResolution?.damage ?? null;
+  const lastCombatHp = lastCombatResolution?.hp ?? null;
+  const lastCombatSummary =
+    lastCombatResolution && lastCombatAttack
+      ? {
+          actorName: getCombatActorName(lastCombatResolution.actorId),
+          targetName: getCombatActorName(lastCombatResolution.targetId),
+          hit: lastCombatAttack.hit === true,
+          total: lastCombatAttack.total ?? "?",
+          targetAc: lastCombatAttack.targetAc ?? "?",
+          critical: lastCombatAttack.critical === true,
+          damage: lastCombatDamage?.total ?? 0,
+          remainingHp: lastCombatHp?.remainingHp ?? null,
+          isEnemyAction: isLastResolutionEnemyAction,
+        }
+      : null;
   const availableCombatTargets =
     combatRoundState.turnControl?.availableTargets ?? [];
   const selectedCombatTarget =
@@ -719,14 +651,14 @@ export default function Home() {
   const canResolveBackendDamageRoll =
     combatAttackFlowState.step === "awaitDamageRoll" &&
     requiresBackendDamageRoll;
-  const combatFlowStepCopy: Record<CombatAttackStep, string> = {
-    idle: "Warte auf Kampfrunde.",
-    chooseAction: "Waehle eine Waffe oder einen Spell.",
-    chooseTarget: "Waehle ein Ziel fuer diese Aktion.",
-    awaitAttackRoll: "Angriffswurf erforderlich. Der Zug pausiert bis zum Hit Roll.",
-    awaitDamageRoll: "Treffer. Schadenwurf erforderlich, bevor der Zug endet.",
-    turnResolved: "Aktion ausgewertet. Der Zug kann beendet werden.",
-    enemyResolving: "DM-KI fuehrt den Gegnerzug verdeckt aus.",
+  const prepareCombatRouteHandoff = () => {
+    writeCombatRouteStateSnapshot({
+      roundState: combatRoundState,
+      attackFlowState: combatAttackFlowState,
+      selectedTargetId: selectedCombatTargetId,
+      status: combatStatus,
+      logEntries: gameLog.slice(0, 12),
+    });
   };
   const backendEncounterState = useMemo<EncounterState | null>(() => {
     if (combatRoundState.round === 0 || visibleInitiativeOrder.length === 0) {
@@ -1095,6 +1027,242 @@ export default function Home() {
     applyHudEvents(frontendState.hudEvents);
   };
 
+  const buildFrontendStateFromLegacyEncounter = (
+    response: LegacySaveEncounterResolveResponse,
+  ): FrontendEncounterState | null => {
+    const encounter = response.state.encounter;
+
+    if (!encounter) {
+      return null;
+    }
+
+    const participants = encounter.participants ?? [];
+    const participantActors: FrontendEncounterActor[] = participants.map(
+      (participant) => {
+        const frontendCharacterId = toFrontendCharacterId(
+          participant.participant_id,
+        );
+        const isEnemy = participant.side === "enemies";
+
+        return {
+          id: participant.participant_id,
+          participantId: participant.participant_id,
+          name: frontendCharacterId
+            ? characters[frontendCharacterId].name
+            : "Schattenräuber",
+          kind: isEnemy ? "enemy" : "player",
+          side: participant.side,
+          currentHp: participant.current_hp,
+          maxHp: participant.max_hp,
+          ac: participant.armor_class ?? 10,
+          speed: participant.speed ?? 30,
+          defeated: participant.defeated,
+        };
+      },
+    );
+    const initiativeOrder = encounter.initiative_order.map((entry) => {
+      const participant = participantActors.find(
+        (actor) => actor.id === entry.participant_id,
+      );
+
+      return {
+        id: entry.participant_id,
+        participantId: entry.participant_id,
+        name: participant?.name ?? entry.participant_id,
+        kind: participant?.kind ?? "unknown",
+        side: participant?.side,
+        currentHp: participant?.currentHp,
+        maxHp: participant?.maxHp,
+        ac: participant?.ac,
+        speed: participant?.speed,
+        defeated: participant?.defeated,
+        total: entry.total,
+        roll: entry.roll,
+        modifier: entry.modifier,
+        nat20: entry.nat20,
+        nat1: entry.nat1,
+      };
+    });
+    const heroes = participantActors.filter((actor) => actor.side === "heroes");
+    const enemies = participantActors.filter((actor) => actor.side === "enemies");
+    const activeActor =
+      participantActors.find(
+        (actor) => actor.id === encounter.active_participant_id,
+      ) ?? null;
+    const activeActorIsHero = activeActor?.side === "heroes";
+    const activeActorIsEnemy = activeActor?.side === "enemies";
+    const attack = response.rules_result.attack as
+      | {
+          roll?: number;
+          modifier?: number;
+          total?: number;
+          target_ac?: number;
+          hit?: boolean;
+          critical?: boolean;
+          nat20?: boolean;
+          nat1?: boolean;
+        }
+      | undefined;
+    const damage = response.rules_result.damage as
+      | {
+          rolls?: number[];
+          modifier?: number;
+          total?: number;
+          critical?: boolean;
+        }
+      | undefined;
+    const hp = response.rules_result.hp as
+      | {
+          previous_hp?: number;
+          damage?: number;
+          remaining_hp?: number;
+          defeated?: boolean;
+        }
+      | undefined;
+    const lastResolution = attack
+      ? {
+          actorId: response.rules_result.actor_id as string | undefined,
+          targetId: response.rules_result.target_id as string | undefined,
+          combatFinished:
+            (response.rules_result.combat_finished as boolean | undefined) ??
+            encounter.combat_finished,
+          attack: {
+            roll: attack.roll,
+            modifier: attack.modifier,
+            total: attack.total,
+            targetAc: attack.target_ac,
+            hit: attack.hit,
+            critical: attack.critical,
+            nat20: attack.nat20,
+            nat1: attack.nat1,
+          },
+          damage: damage
+            ? {
+                rolls: damage.rolls,
+                modifier: damage.modifier,
+                total: damage.total,
+                critical: damage.critical,
+              }
+            : null,
+          hp: hp
+            ? {
+                previousHp: hp.previous_hp,
+                damage: hp.damage,
+                remainingHp: hp.remaining_hp,
+                defeated: hp.defeated,
+              }
+            : null,
+        }
+      : null;
+
+    return {
+      round: encounter.round_number,
+      turnIndex: encounter.turn_index,
+      activeActorId: encounter.active_participant_id,
+      activeActor,
+      initiativeOrder,
+      participants: participantActors,
+      heroes,
+      enemies,
+      combatFinished: encounter.combat_finished,
+      turnControl: {
+        requiresPlayerAction: activeActorIsHero,
+        requiresDamageRoll: false,
+        autoResolvable: activeActorIsEnemy,
+        allowedActions: activeActorIsHero ? ["attack"] : [],
+        availableTargets: activeActorIsHero
+          ? enemies.filter((enemy) => !enemy.defeated)
+          : heroes.filter((hero) => !hero.defeated),
+      },
+      hudEvents: response.hud_events,
+      lastBackendEvents: response.hud_events,
+      lastResolution,
+      pendingDamage: null,
+    };
+  };
+
+  const applyEncounterResolveResponse = (
+    response: LegacySaveEncounterResolveResponse,
+    fallbackStatus: string,
+  ): FrontendEncounterState | null => {
+    const frontendState =
+      response.frontend_state ?? buildFrontendStateFromLegacyEncounter(response);
+
+    if (!frontendState) {
+      setCombatStatus("Backend-Antwort enthält keinen Encounter-State.");
+      return null;
+    }
+
+    setInventoryState(response.state.inventory);
+    applyFrontendEncounterState(frontendState);
+    setSelectedCombatTargetId(null);
+    const resolutionBelongsToActiveActor =
+      frontendState.lastResolution?.actorId === frontendState.activeActorId;
+    const nextStep =
+      frontendState.turnControl?.requiresDamageRoll === true
+        ? "awaitDamageRoll"
+        : frontendState.lastResolution && resolutionBelongsToActiveActor
+          ? "turnResolved"
+          : frontendState.turnControl?.requiresPlayerAction
+            ? "chooseAction"
+            : frontendState.turnControl?.autoResolvable
+              ? "enemyResolving"
+              : "idle";
+
+    setCombatAttackFlowState({
+      actorId: frontendState.activeActorId,
+      actionName: null,
+      attackFormula: null,
+      damageFormula: null,
+      targetId: resolutionBelongsToActiveActor
+        ? frontendState.lastResolution?.targetId ?? null
+        : null,
+      attackTotal: resolutionBelongsToActiveActor
+        ? frontendState.lastResolution?.attack?.total ?? null
+        : null,
+      attackHit: resolutionBelongsToActiveActor
+        ? frontendState.lastResolution?.attack?.hit ?? null
+        : null,
+      damageTotal: resolutionBelongsToActiveActor
+        ? frontendState.lastResolution?.damage?.total ?? null
+        : null,
+      remainingHp: resolutionBelongsToActiveActor
+        ? frontendState.lastResolution?.hp?.remainingHp ?? null
+        : null,
+      step: nextStep,
+    });
+    setCombatStatus(fallbackStatus);
+    const resolutionAttack = frontendState.lastResolution?.attack;
+    if (frontendState.lastResolution && resolutionAttack) {
+      const resolution = frontendState.lastResolution;
+      const actorName =
+        frontendState.participants.find((actor) => actor.id === resolution.actorId)
+          ?.name ??
+        resolution.actorId ??
+        "Unbekannt";
+      const targetName =
+        frontendState.participants.find((actor) => actor.id === resolution.targetId)
+          ?.name ??
+        resolution.targetId ??
+        "Unbekannt";
+
+      addGameLog({
+        title: `${actorName} greift ${targetName} an`,
+        detail: `Attack Roll ${resolutionAttack.total ?? "?"} gegen AC ${
+          resolutionAttack.targetAc ?? "?"
+        } - ${resolutionAttack.hit ? "Treffer" : "Verfehlt"}${
+          resolution.damage
+            ? ` | Schaden ${resolution.damage.total ?? 0} | HP ${
+                resolution.hp?.remainingHp ?? "?"
+              }`
+            : ""
+        }`,
+        total: resolutionAttack.total ?? undefined,
+      });
+    }
+    return frontendState;
+  };
+
   const syncInventoryView = async (nextInventory = inventoryState) => {
     try {
       const response = await getInventoryView(nextInventory);
@@ -1111,19 +1279,26 @@ export default function Home() {
 
   const syncBackendSave = async (state = backendSaveState) => {
     if (!selectedCharacterId) {
-      return;
+      return false;
     }
 
     try {
       await createOrUpdateSave({
         slot_name: BACKEND_SLOT_NAME,
         character_id: toBackendCharacterId(selectedCharacterId),
-        scene_number:
-          scenes.findIndex((scene) => scene.id === currentSceneId) + 1 || 1,
+        scene_number: getBackendSceneNumber(currentSceneId),
         state,
       });
+      return true;
     } catch (error) {
-      void error;
+      const detail =
+        error instanceof Error ? error.message : "Unbekannter Fehler";
+      setCombatStatus(`Backend-Save nicht erreichbar: ${detail}`);
+      addGameLog({
+        title: "Backend-Save fehlgeschlagen",
+        detail,
+      });
+      return false;
     }
   };
 
@@ -1148,7 +1323,13 @@ export default function Home() {
     setInventoryStatus(`${item.name}: ${action} wird über Backend geprüft...`);
 
     try {
-      await syncBackendSave();
+      const isSaveSynced = await syncBackendSave();
+      if (!isSaveSynced) {
+        setInventoryStatus(
+          `${item.name}: Backend-Save nicht erreichbar, Aktion abgebrochen.`,
+        );
+        return;
+      }
       const response = await runSaveInventoryAction(
         BACKEND_SLOT_NAME,
         item.item_id,
@@ -1430,29 +1611,16 @@ export default function Home() {
 
   const advanceCombatTurn = () => {
     setCombatRoundState((currentState) => {
-      const order = currentState.initiativeOrder;
+      const advanceResult = advanceCombatTurnState(currentState);
 
-      if (order.length === 0 || currentState.round === 0) {
+      if (!advanceResult) {
         return currentState;
       }
 
-      const nextTurnIndex = (currentState.turnIndex + 1) % order.length;
-      const isNewRound = nextTurnIndex === 0;
-      const nextRound = isNewRound ? currentState.round + 1 : currentState.round;
-      const nextActor = order[nextTurnIndex];
-
       setSelectedCombatTargetId(null);
-      setCombatAttackFlowState(
-        createCombatAttackFlowStateForActor(nextActor, nextRound),
-      );
+      setCombatAttackFlowState(advanceResult.attackFlowState);
 
-      return {
-        ...currentState,
-        round: nextRound,
-        activeActorId: nextActor?.id ?? null,
-        turnIndex: nextTurnIndex,
-        awaitingRoll: null,
-      };
+      return advanceResult.roundState;
     });
   };
 
@@ -1465,7 +1633,18 @@ export default function Home() {
     setCombatStatus("Backend loest den aktuellen Kampfrunden-Zug auf...");
 
     try {
-      await syncBackendSave();
+      const isSaveSynced = await syncBackendSave();
+      if (!isSaveSynced) {
+        setDmMessages((messages) => [
+          ...messages,
+          {
+            id: createId(),
+            sender: "DM",
+            text: "Der Gegnerzug kann nicht ausgewertet werden, weil der Encounter-Save das Backend nicht erreicht.",
+          },
+        ]);
+        return;
+      }
       const target =
         activeCombatActor.kind === "enemy"
           ? undefined
@@ -1474,7 +1653,7 @@ export default function Home() {
       const needsHeroTarget = activeCombatActor.kind !== "enemy";
 
       if (needsHeroTarget && !target) {
-        setCombatStatus("Bitte zuerst ein Ziel fuer den Angriff auswaehlen.");
+        setCombatStatus("Bitte zuerst ein Ziel für den Angriff auswählen.");
         setCombatAttackFlowState({
           actorId: activeCombatActor.id,
           actionName: null,
@@ -1520,40 +1699,15 @@ export default function Home() {
         BACKEND_SLOT_NAME,
         action,
       );
-
-      setInventoryState(response.state.inventory);
-      applyFrontendEncounterState(response.frontend_state);
-      setSelectedCombatTargetId(null);
-      setCombatAttackFlowState({
-        actorId:
-          response.frontend_state.lastResolution?.actorId ??
-          response.frontend_state.activeActorId,
-        actionName: null,
-        attackFormula: null,
-        damageFormula: null,
-        targetId: response.frontend_state.lastResolution?.targetId ?? null,
-        attackTotal: response.frontend_state.lastResolution?.attack?.total ?? null,
-        attackHit: response.frontend_state.lastResolution?.attack?.hit ?? null,
-        step:
-          activeCombatActor.kind !== "enemy" &&
-          response.frontend_state.lastResolution?.attack?.hit === true
-            ? "awaitDamageRoll"
-            : response.frontend_state.lastResolution
-              ? "turnResolved"
-              : response.frontend_state.turnControl?.requiresPlayerAction
-                ? "chooseAction"
-                : response.frontend_state.turnControl?.autoResolvable
-                  ? "enemyResolving"
-                  : "idle",
-      });
-      setCombatStatus(
-        response.frontend_state.lastResolution
-          ? "Backend-Zug aufgeloest. HUD und Kampfrunde wurden aktualisiert."
-          : "Backend-Zug verarbeitet. Kampfrunde wurde aktualisiert.",
+      applyEncounterResolveResponse(
+        response as LegacySaveEncounterResolveResponse,
+        response.frontend_state
+          ? "Backend-Zug aufgelöst. HUD und Kampfrunde wurden aktualisiert."
+          : "Legacy-Backend: Zug wurde ausgewertet und der Kampfrunden-State aktualisiert.",
       );
     } catch (error) {
       setCombatStatus(
-        "Backend-Auto-Turn nicht erreichbar. Zug bleibt unveraendert.",
+        "Backend-Auto-Turn nicht erreichbar. Zug bleibt unverändert.",
       );
       addGameLog({
         title: "Backend-Auto-Turn fehlgeschlagen",
@@ -1575,10 +1729,21 @@ export default function Home() {
     }
 
     setIsBackendTurnResolving(true);
-    setCombatStatus("Backend wuerfelt den Angriff gegen die Ziel-AC...");
+    setCombatStatus("Backend würfelt den Angriff gegen die Ziel-AC...");
 
     try {
-      await syncBackendSave();
+      const isSaveSynced = await syncBackendSave();
+      if (!isSaveSynced) {
+        setDmMessages((messages) => [
+          ...messages,
+          {
+            id: createId(),
+            sender: "DM",
+            text: "Der Attack Roll kann nicht ausgewertet werden, weil der Encounter-Save das Backend nicht erreicht.",
+          },
+        ]);
+        return;
+      }
       const action: EncounterAutoTurnAction = {
         action_type: "attack",
         actor_id:
@@ -1587,40 +1752,96 @@ export default function Home() {
             : toBackendCharacterId(activeNpc?.id ?? "ayane"),
         target_id: selectedCombatTarget.id,
       };
-      const response = await resolveSaveEncounterAttackRoll(
-        BACKEND_SLOT_NAME,
-        action,
+      let response: LegacySaveEncounterResolveResponse;
+      let usedLegacyAutoTurn = false;
+
+      try {
+        response = (await resolveSaveEncounterAttackRoll(
+          BACKEND_SLOT_NAME,
+          action,
+        )) as LegacySaveEncounterResolveResponse;
+      } catch (attackError) {
+        if (
+          attackError instanceof Error &&
+          attackError.message.includes("Backend 404")
+        ) {
+          usedLegacyAutoTurn = true;
+          response = (await resolveSaveEncounterAutoTurn(
+            BACKEND_SLOT_NAME,
+            action,
+          )) as LegacySaveEncounterResolveResponse;
+        } else {
+          throw attackError;
+        }
+      }
+
+      const frontendState = applyEncounterResolveResponse(
+        response,
+        usedLegacyAutoTurn
+          ? "Legacy-Backend: Attack und Schaden wurden gemeinsam ausgewertet."
+          : "Backend hat den Attack Roll ausgewertet.",
       );
-      const attack = response.frontend_state.lastResolution?.attack ?? null;
+
+      if (!frontendState) {
+        return;
+      }
+
+      const attack = frontendState.lastResolution?.attack ?? null;
       const targetName = getCombatActorName(
-        response.frontend_state.lastResolution?.targetId ??
-          selectedCombatTarget.id,
+        frontendState.lastResolution?.targetId ?? selectedCombatTarget.id,
       );
       const requiresDamageRoll =
-        response.frontend_state.turnControl?.requiresDamageRoll === true ||
-        Boolean(response.frontend_state.pendingDamage);
+        frontendState.turnControl?.requiresDamageRoll === true ||
+        Boolean(frontendState.pendingDamage);
+      const resolutionBelongsToActiveActor =
+        frontendState.lastResolution?.actorId === frontendState.activeActorId;
+      const nextStep =
+        requiresDamageRoll
+          ? "awaitDamageRoll"
+          : resolutionBelongsToActiveActor
+            ? "turnResolved"
+            : frontendState.turnControl?.requiresPlayerAction
+              ? "chooseAction"
+              : frontendState.turnControl?.autoResolvable
+                ? "enemyResolving"
+                : "idle";
 
-      setInventoryState(response.state.inventory);
-      applyFrontendEncounterState(response.frontend_state);
       setCombatAttackFlowState((currentState) => ({
         ...currentState,
-        actorId:
-          response.frontend_state.lastResolution?.actorId ??
-          response.frontend_state.activeActorId,
+        actorId: frontendState.activeActorId,
+        actionName:
+          requiresDamageRoll || resolutionBelongsToActiveActor
+            ? currentState.actionName ?? combatAttackFlowState.actionName
+            : null,
         targetId:
-          response.frontend_state.lastResolution?.targetId ??
-          selectedCombatTarget.id,
-        attackTotal: attack?.total ?? null,
-        attackHit: attack?.hit ?? null,
-        damageTotal: null,
-        remainingHp: null,
-        step: requiresDamageRoll ? "awaitDamageRoll" : "turnResolved",
+          requiresDamageRoll || resolutionBelongsToActiveActor
+            ? frontendState.lastResolution?.targetId ?? selectedCombatTarget.id
+            : null,
+        attackTotal:
+          requiresDamageRoll || resolutionBelongsToActiveActor
+            ? attack?.total ?? null
+            : null,
+        attackHit:
+          requiresDamageRoll || resolutionBelongsToActiveActor
+            ? attack?.hit ?? null
+            : null,
+        damageTotal:
+          requiresDamageRoll || resolutionBelongsToActiveActor
+            ? frontendState.lastResolution?.damage?.total ?? null
+            : null,
+        remainingHp:
+          requiresDamageRoll || resolutionBelongsToActiveActor
+            ? frontendState.lastResolution?.hp?.remainingHp ?? null
+            : null,
+        step: nextStep,
       }));
       setCombatStatus(
         attack
           ? `${attack.total ?? "?"} gegen AC ${attack.targetAc ?? "?"}: ${
               attack.hit
-                ? "Treffer. Backend wartet auf Damage Roll."
+                ? usedLegacyAutoTurn
+                  ? "Treffer. Legacy-Backend hat Schaden direkt ausgewertet."
+                  : "Treffer. Backend wartet auf Damage Roll."
                 : "Verfehlt. Kein Damage Roll."
             }`
           : "Backend hat den Angriff verarbeitet.",
@@ -1631,15 +1852,27 @@ export default function Home() {
           id: createId(),
           sender: "DM",
           text: attack?.hit
-            ? `${activeCombatActor.name} trifft ${targetName} mit ${combatAttackFlowState.actionName}. Bitte wuerfle jetzt den Schaden.`
+            ? usedLegacyAutoTurn
+              ? `${activeCombatActor.name} trifft ${targetName} mit ${combatAttackFlowState.actionName}. Schaden wurde vom Legacy-Backend direkt ausgewertet.`
+              : `${activeCombatActor.name} trifft ${targetName} mit ${combatAttackFlowState.actionName}. Bitte würfle jetzt den Schaden.`
             : `${activeCombatActor.name} verfehlt ${targetName} mit ${combatAttackFlowState.actionName}. Der Zug kann beendet werden.`,
         },
       ]);
     } catch (error) {
-      setCombatStatus("Backend-Attack-Roll nicht erreichbar.");
+      const detail =
+        error instanceof Error ? error.message : "Unbekannter Fehler";
+      setCombatStatus(`Backend-Attack-Roll nicht erreichbar: ${detail}`);
+      setDmMessages((messages) => [
+        ...messages,
+        {
+          id: createId(),
+          sender: "DM",
+          text: `Attack Roll konnte nicht ausgewertet werden: ${detail}`,
+        },
+      ]);
       addGameLog({
         title: "Backend-Attack-Roll fehlgeschlagen",
-        detail: error instanceof Error ? error.message : "Unbekannter Fehler",
+        detail,
       });
     } finally {
       setIsBackendTurnResolving(false);
@@ -1658,7 +1891,7 @@ export default function Home() {
     }
 
     setIsBackendTurnResolving(true);
-    setCombatStatus("Backend wuerfelt den Schaden und aktualisiert HP...");
+    setCombatStatus("Backend würfelt den Schaden und aktualisiert HP...");
 
     try {
       const response = await resolveSaveEncounterDamageRoll(BACKEND_SLOT_NAME);
@@ -1825,7 +2058,7 @@ export default function Home() {
       total: result.total,
     });
 
-    if (options?.initiativeCharacterId && isInitiativeScene) {
+    if (options?.initiativeCharacterId && (isInitiativeScene || isCombatScene)) {
       const initiativeCharacterId = options.initiativeCharacterId;
       const nextInitiativeRolls = {
         ...initiativeRolls,
@@ -1860,14 +2093,8 @@ export default function Home() {
 
       const enemyInitiatives = [
         {
-          id: "shadow-raider-1",
-          name: "Schattenräuber A",
-          kind: "enemy" as const,
-          roll: Math.floor(Math.random() * 20) + 1 + 2,
-        },
-        {
-          id: "shadow-raider-2",
-          name: "Schattenräuber B",
+          id: "bandit",
+          name: "Schattenräuber",
           kind: "enemy" as const,
           roll: Math.floor(Math.random() * 20) + 1 + 2,
         },
@@ -1900,16 +2127,49 @@ export default function Home() {
           total: "total" in actor ? actor.total : undefined,
         }),
       );
+      const firstCombatActor = combatInitiativeOrder[0];
+      const availableTargets = createInitialCombatEnemies().map((enemy) => ({
+        id: enemy.id,
+        participantId: enemy.id,
+        name: enemy.name,
+        kind: "enemy" as const,
+        side: "enemies" as const,
+        currentHp: enemy.currentHp,
+        maxHp: enemy.maxHp,
+        ac: enemy.ac,
+        speed: enemy.speed,
+        defeated: false,
+      }));
+      const initialTurnControl =
+        firstCombatActor?.kind === "enemy"
+          ? {
+              requiresPlayerAction: false,
+              autoResolvable: true,
+              allowedActions: ["attack"],
+              availableTargets: [],
+            }
+          : {
+              requiresPlayerAction: true,
+              autoResolvable: false,
+              allowedActions: ["attack"],
+              availableTargets,
+            };
 
       setInitiativeOrder(combatInitiativeOrder);
       setCombatRoundState((currentState) => ({
         ...currentState,
         round: 1,
-        activeActorId: combatInitiativeOrder[0]?.id ?? null,
+        activeActorId: firstCombatActor?.id ?? null,
         turnIndex: 0,
         initiativeOrder: combatInitiativeOrder,
         awaitingRoll: null,
+        enemies: createInitialCombatEnemies(),
+        turnControl: initialTurnControl,
       }));
+      setSelectedCombatTargetId(null);
+      setCombatAttackFlowState(
+        createCombatAttackFlowStateForActor(firstCombatActor, 1),
+      );
       setInitiativeStatus(`Initiative steht: ${visibleInitiativeOrder}.`);
       addGameLog({
         title: "Initiative vollständig",
@@ -2202,6 +2462,17 @@ export default function Home() {
               <UserPlus className="size-4" />
               Registrieren
             </Link>
+            {isCombatScene ? (
+              <Link
+                className="inline-flex h-11 items-center gap-2 rounded-md border border-red-400/40 bg-red-500/15 px-3 text-sm font-bold text-red-100 transition hover:border-red-300 hover:bg-red-500/25"
+                href="/combat"
+                onClick={prepareCombatRouteHandoff}
+                title="Combat-Screen öffnen"
+              >
+                <Swords className="size-4" />
+                Combat
+              </Link>
+            ) : null}
             <button
               aria-label="DM-Chat öffnen"
               className="inline-flex h-11 items-center gap-2 rounded-md border border-white/15 bg-white/10 px-3 text-sm font-bold text-slate-100 shadow-glow transition hover:border-ember-400/70 hover:bg-ember-500/15"
@@ -2485,12 +2756,24 @@ export default function Home() {
                             <div className="mt-1 grid grid-cols-2 gap-1">
                               <button
                                 className="rounded-md border border-white/10 bg-white/[0.06] px-1 py-1.5 text-[0.65rem] transition hover:border-ember-400/70"
-                                onClick={() =>
+                                onClick={() => {
+                                  if (
+                                    isCombatScene &&
+                                    combatAttackFlowState.step ===
+                                      "awaitAttackRoll" &&
+                                    combatAttackFlowState.actionName ===
+                                      action.name &&
+                                    selectedCombatTarget
+                                  ) {
+                                    void rollCombatAttack();
+                                    return;
+                                  }
+
                                   rollFormula(
                                     `${action.name} Angriff`,
                                     `1d20+${action.attack}`,
-                                  )
-                                }
+                                  );
+                                }}
                                 type="button"
                               >
                                 <span className="block text-[0.55rem] uppercase tracking-[0.12em] text-slate-400">
@@ -2637,12 +2920,24 @@ export default function Home() {
                             <div className="mt-1 grid grid-cols-2 gap-1">
                               <button
                                 className="rounded-md border border-white/10 bg-white/[0.06] px-1 py-1.5 text-[0.65rem] transition hover:border-ember-400/70"
-                                onClick={() =>
+                                onClick={() => {
+                                  if (
+                                    isCombatScene &&
+                                    combatAttackFlowState.step ===
+                                      "awaitAttackRoll" &&
+                                    combatAttackFlowState.actionName ===
+                                      action.name &&
+                                    selectedCombatTarget
+                                  ) {
+                                    void rollCombatAttack();
+                                    return;
+                                  }
+
                                   rollFormula(
                                     `${activeNpc.name} ${action.name} Angriff`,
                                     `1d20+${action.attack}`,
-                                  )
-                                }
+                                  );
+                                }}
                                 type="button"
                               >
                                 <span className="block text-[0.55rem] uppercase tracking-[0.12em] text-slate-400">
@@ -3544,6 +3839,59 @@ export default function Home() {
               <p className="text-xs uppercase tracking-[0.18em] text-ember-300">
                 Spieleraktionen
               </p>
+              {isCombatScene && visibleInitiativeOrder.length === 0 ? (
+                <div className="space-y-2 rounded-md border border-ember-400/35 bg-ember-500/10 p-3">
+                  <div>
+                    <p className="text-sm font-black text-ember-100">
+                      Initiative starten
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-slate-300">
+                      {initiativeStatus} Würfle Ryu und Ayane. Danach wird die
+                      Reihenfolge aufgebaut und der erste Zug erscheint hier.
+                    </p>
+                  </div>
+                  <div className="grid gap-2">
+                    {activeCharacter ? (
+                      <button
+                        className="rounded-md border border-ember-400/55 bg-ember-500 px-3 py-2 text-left text-xs font-black text-ink-950 shadow-glow transition hover:border-ember-200 hover:bg-ember-400 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.06] disabled:text-slate-500 disabled:shadow-none"
+                        disabled={initiativeRolls[activeCharacter.id] !== undefined}
+                        onClick={() =>
+                          rollFormula(
+                            `${activeCharacter.name} Initiative`,
+                            `1d20+${activeCharacter.stats.initiative}`,
+                            { initiativeCharacterId: activeCharacter.id },
+                          )
+                        }
+                        type="button"
+                      >
+                        {activeCharacter.name} Initiative
+                        {initiativeRolls[activeCharacter.id] !== undefined
+                          ? `: ${initiativeRolls[activeCharacter.id]}`
+                          : ` +${activeCharacter.stats.initiative}`}
+                      </button>
+                    ) : null}
+                    {activeNpc ? (
+                      <button
+                        className="rounded-md border border-white/10 bg-white/[0.06] px-3 py-2 text-left text-xs font-black text-slate-100 transition hover:border-ember-400/70 hover:bg-ember-500/15 disabled:cursor-not-allowed disabled:text-slate-500"
+                        disabled={initiativeRolls[activeNpc.id] !== undefined}
+                        onClick={() =>
+                          rollFormula(
+                            `${activeNpc.name} Initiative`,
+                            `1d20+${activeNpc.stats.initiative}`,
+                            { initiativeCharacterId: activeNpc.id },
+                          )
+                        }
+                        type="button"
+                      >
+                        {activeNpc.name} Initiative
+                        {initiativeRolls[activeNpc.id] !== undefined
+                          ? `: ${initiativeRolls[activeNpc.id]}`
+                          : ` +${activeNpc.stats.initiative}`}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
               {isCombatScene && visibleInitiativeOrder.length > 0 ? (
                 <div className="space-y-2 rounded-md border border-white/10 bg-white/[0.04] p-2">
                   <div className="flex items-center justify-between gap-2">
@@ -3607,6 +3955,82 @@ export default function Home() {
                           5e Flow
                         </span>
                       </div>
+                      {lastCombatSummary ? (
+                        <div
+                          className={`mt-2 rounded-md border px-2 py-2 text-xs ${
+                            lastCombatSummary.isEnemyAction
+                              ? lastCombatSummary.hit
+                                ? "border-red-400/45 bg-red-500/15 text-red-50"
+                                : "border-slate-400/25 bg-white/[0.06] text-slate-100"
+                              : lastCombatSummary.hit
+                                ? "border-emerald-400/45 bg-emerald-500/15 text-emerald-50"
+                                : "border-slate-400/25 bg-white/[0.06] text-slate-100"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-[0.6rem] font-black uppercase tracking-[0.14em] text-slate-400">
+                                Letzte Aktion
+                              </p>
+                              <p className="mt-1 text-sm font-black text-slate-50">
+                                {lastCombatSummary.actorName}{" "}
+                                {lastCombatSummary.hit
+                                  ? "trifft"
+                                  : "verfehlt"}{" "}
+                                {lastCombatSummary.targetName}
+                              </p>
+                            </div>
+                            <span
+                              className={`shrink-0 rounded px-2 py-1 text-[0.68rem] font-black ${
+                                lastCombatSummary.hit
+                                  ? "bg-ember-500 text-ink-950"
+                                  : "bg-slate-700 text-slate-100"
+                              }`}
+                            >
+                              {lastCombatSummary.hit ? "Treffer" : "Miss"}
+                            </span>
+                          </div>
+                          <div className="mt-2 grid grid-cols-3 gap-1 text-center">
+                            <span className="rounded border border-white/10 bg-black/25 px-1.5 py-1">
+                              <span className="block text-[0.55rem] font-bold uppercase tracking-[0.1em] text-slate-400">
+                                Attack
+                              </span>
+                              <span className="text-sm font-black">
+                                {lastCombatSummary.total}
+                              </span>
+                            </span>
+                            <span className="rounded border border-white/10 bg-black/25 px-1.5 py-1">
+                              <span className="block text-[0.55rem] font-bold uppercase tracking-[0.1em] text-slate-400">
+                                AC
+                              </span>
+                              <span className="text-sm font-black">
+                                {lastCombatSummary.targetAc}
+                              </span>
+                            </span>
+                            <span className="rounded border border-white/10 bg-black/25 px-1.5 py-1">
+                              <span className="block text-[0.55rem] font-bold uppercase tracking-[0.1em] text-slate-400">
+                                Schaden
+                              </span>
+                              <span className="text-sm font-black">
+                                {lastCombatSummary.hit
+                                  ? lastCombatSummary.damage
+                                  : 0}
+                              </span>
+                            </span>
+                          </div>
+                          {lastCombatSummary.hit ? (
+                            <p className="mt-2 rounded border border-white/10 bg-black/25 px-2 py-1 font-bold text-slate-100">
+                              {lastCombatSummary.critical ? "Kritischer Treffer. " : ""}
+                              HP danach:{" "}
+                              {lastCombatSummary.remainingHp ?? "unbekannt"}
+                            </p>
+                          ) : (
+                            <p className="mt-2 rounded border border-white/10 bg-black/25 px-2 py-1 font-bold text-slate-300">
+                              Kein Schaden bei Miss.
+                            </p>
+                          )}
+                        </div>
+                      ) : null}
                       <div className="mt-2 grid grid-cols-3 gap-1 text-center text-[0.58rem] font-black uppercase tracking-[0.08em]">
                         <span
                           className={`rounded border px-1 py-1 ${
@@ -3642,6 +4066,11 @@ export default function Home() {
                       <p className="mt-2 rounded border border-white/10 bg-black/25 px-2 py-1.5 text-[0.68rem] font-semibold text-slate-300">
                         {combatFlowStepCopy[combatAttackFlowState.step]}
                       </p>
+                      {combatStatus ? (
+                        <p className="mt-2 rounded border border-emerald-400/25 bg-emerald-500/10 px-2 py-1.5 text-[0.68rem] font-semibold text-emerald-100">
+                          {combatStatus}
+                        </p>
+                      ) : null}
                       {combatRoundState.turnControl?.requiresPlayerAction &&
                       combatAttackFlowState.step === "chooseAction" ? (
                         <div className="mt-2 rounded-md border border-white/10 bg-black/30 p-2">
@@ -3804,7 +4233,7 @@ export default function Home() {
                                     ? "Zug beenden"
                                 : selectedCombatTarget &&
                                     combatAttackFlowState.actionName
-                                  ? `3. Angriff wuerfeln (${combatAttackFlowState.attackFormula})`
+                                  ? `3. Angriff würfeln (${combatAttackFlowState.attackFormula})`
                                   : "Combat-Schritt offen"}
                       </button>
                       {combatAttackFlowState.attackTotal !== null ? (
@@ -3846,7 +4275,7 @@ export default function Home() {
                         </div>
                       ) : null}
                       {isLastResolutionEnemyAction && lastCombatResolution ? (
-                        <div className="mt-2 rounded-md border border-red-400/35 bg-red-500/10 px-2 py-2 text-xs text-red-50">
+                        <div className="mt-2 rounded-md border border-red-400/25 bg-red-500/10 px-2 py-1.5 text-[0.68rem] text-red-50">
                           <p className="font-black text-red-100">
                             DM-KI: {getCombatActorName(lastCombatResolution.actorId)} greift{" "}
                             {getCombatActorName(lastCombatResolution.targetId)} an
@@ -3867,7 +4296,7 @@ export default function Home() {
                         </div>
                       ) : null}
                       {isLastResolutionHeroAction && lastCombatResolution ? (
-                        <div className="mt-2 rounded-md border border-emerald-400/35 bg-emerald-500/10 px-2 py-2 text-xs text-emerald-50">
+                        <div className="mt-2 rounded-md border border-emerald-400/25 bg-emerald-500/10 px-2 py-1.5 text-[0.68rem] text-emerald-50">
                           <p className="font-black text-emerald-100">
                             {getCombatActorName(lastCombatResolution.actorId)} greift{" "}
                             {getCombatActorName(lastCombatResolution.targetId)} an
