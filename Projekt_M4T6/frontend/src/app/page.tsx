@@ -2650,7 +2650,7 @@ export default function Home() {
       </header>
 
       {/* MAIN 3-COLUMN */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[260px_1fr_320px]">
+      <div className="flex-1 min-h-0 flex flex-col overflow-y-auto lg:overflow-hidden lg:grid lg:grid-cols-[260px_1fr_320px]">
           {/* LEFT SIDEBAR */}
           <aside className="hidden lg:flex flex-col min-h-0 overflow-y-auto border-r border-white/[0.07]" style={{background: 'rgba(8,8,8,0.7)', backdropFilter: 'blur(8px)'}}>
             {/* Character name header */}
@@ -3729,7 +3729,7 @@ export default function Home() {
           </aside>
 
           {/* CENTER */}
-          <main className="flex flex-col min-h-0 overflow-hidden relative">
+          <main className="flex flex-col overflow-hidden relative lg:min-h-0" style={{minHeight: 'calc(100dvh - 3.5rem)'}}>
             {/* Scene info bar */}
             <div className="flex-none px-4 py-2 border-b border-white/[0.06] flex items-center gap-2.5 shrink-0" style={{background: 'rgba(6,6,6,0.9)'}}>
               <BookOpen className="w-3.5 h-3.5 text-slate-600 shrink-0" />
@@ -4117,7 +4117,7 @@ export default function Home() {
           </main>{/* close center */}
 
           {/* RIGHT SIDEBAR */}
-          <aside className="hidden lg:flex flex-col min-h-0 overflow-hidden border-l border-white/[0.07]" style={{background: 'rgba(8,8,8,0.7)', backdropFilter: 'blur(8px)'}}>
+          <aside className="flex flex-col border-t lg:border-t-0 lg:border-l lg:min-h-0 lg:overflow-hidden border-white/[0.07]" style={{background: 'rgba(8,8,8,0.7)', backdropFilter: 'blur(8px)'}}>
             {/* Spieler-Aktionen header */}
             <div className="px-4 pt-4 pb-3 border-b border-white/[0.07] shrink-0">
               <div className="flex items-center gap-1.5">
