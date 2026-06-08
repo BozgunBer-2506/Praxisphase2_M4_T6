@@ -60,6 +60,9 @@ const sessions = [
   },
 ];
 
+const GOLD = "#d4af37";
+const GOLD_DIM = "rgba(212,175,55,0.7)";
+
 export default function CampaignsPage() {
   const router = useRouter();
   const [saveStates, setSaveStates] = useState<SaveState[]>([]);
@@ -125,27 +128,16 @@ export default function CampaignsPage() {
   }, [loaded]);
 
   const deleteSaveState = (saveStateId: string) => {
-    const nextSaveStates = saveStates.filter(
-      (saveState) => saveState.id !== saveStateId,
-    );
-
+    const nextSaveStates = saveStates.filter((s) => s.id !== saveStateId);
     localStorage.setItem(SAVE_KEY, JSON.stringify(nextSaveStates));
-
     try {
-      const lastSaveState = JSON.parse(
-        localStorage.getItem(LAST_SAVE_KEY) ?? "null",
-      ) as SaveState | null;
-      const lastSaveStillExists =
-        lastSaveState &&
-        nextSaveStates.some((saveState) => saveState.id === lastSaveState.id);
-
-      if (!lastSaveStillExists) {
+      const lastSave = JSON.parse(localStorage.getItem(LAST_SAVE_KEY) ?? "null") as SaveState | null;
+      if (lastSave && !nextSaveStates.some((s) => s.id === lastSave.id)) {
         localStorage.removeItem(LAST_SAVE_KEY);
       }
     } catch {
       localStorage.removeItem(LAST_SAVE_KEY);
     }
-
     setSaveStates(nextSaveStates);
   };
 
@@ -157,223 +149,299 @@ export default function CampaignsPage() {
   if (!loaded) return null;
 
   return (
-    <main className="min-h-screen overflow-y-auto px-4 py-5 text-slate-50 sm:px-6 lg:px-8" style={{maxHeight: '100dvh'}}>
-      <section className="mx-auto flex min-h-[calc(100vh-2.5rem)] max-w-6xl flex-col gap-5">
-        <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <Link
-              className="inline-flex items-center gap-2 text-sm text-slate-300 transition hover:text-ember-300"
-              href="/"
-            >
-              <ArrowLeft className="size-4" />
-              Zurück zur Szene
-            </Link>
-            <p className="mt-4 text-xs uppercase tracking-[0.22em] text-ember-400">
-              Main-Bereich
-            </p>
-            <h1 className="mt-1 text-3xl font-bold leading-tight">
-              Kampagnenportal
-            </h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="relative" ref={accountRef}>
-              <button
-                className="flex items-center gap-2 rounded-md px-3 py-2 transition-colors hover:bg-white/5"
-                onClick={() => setIsAccountOpen((o) => !o)}
-                style={{background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.2)'}}
-                type="button"
-              >
-                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold font-cinzel shrink-0" style={{background: 'rgba(212,175,55,0.2)', color: '#d4af37'}}>
-                  {username ? username[0].toUpperCase() : "?"}
-                </div>
-                <div className="text-left">
-                  <p className="text-[0.55rem] font-cinzel uppercase tracking-wide leading-none" style={{color: 'rgba(212,175,55,0.7)'}}>Eingeloggt als</p>
-                  <p className="text-xs font-bold text-slate-100 leading-none mt-0.5 max-w-[140px] truncate">{username ?? "Abenteurer"}</p>
-                </div>
-                <ChevronDown className="size-3 text-slate-500" />
-              </button>
-              {isAccountOpen ? (
-                <div className="absolute right-0 top-12 z-50 w-64 rounded-lg shadow-2xl" style={{background: 'rgba(8,8,8,0.98)', border: '1px solid rgba(212,175,55,0.2)', backdropFilter: 'blur(20px)'}}>
-                  <div className="p-4 border-b" style={{borderColor: 'rgba(255,255,255,0.08)'}}>
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold font-cinzel shrink-0" style={{background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.3)', color: '#d4af37'}}>
-                        {username ? username[0].toUpperCase() : "?"}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-bold text-slate-100 truncate">{username ?? "-"}</p>
-                        <p className="text-[0.6rem] font-cinzel uppercase tracking-wide mt-1" style={{color: 'rgba(212,175,55,0.6)'}}>
-                          Spieler #{userId ?? "..."}
-                        </p>
-                        <p className="text-[0.6rem] text-slate-500 mt-0.5">Falkenwacht Account</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="p-2">
-                    <Link
-                      className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
-                      href="/"
-                      onClick={() => setIsAccountOpen(false)}
-                    >
-                      <Swords className="size-4" />
-                      Zur Szene
-                    </Link>
-                    <button
-                      className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm transition-colors mt-1"
-                      onClick={logout}
-                      style={{color: '#fca5a5'}}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239,68,68,0.1)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                      type="button"
-                    >
-                      <LogIn className="size-4 rotate-180" />
-                      Abmelden
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </header>
+    <div className="h-dvh flex flex-col overflow-hidden text-white" style={{ background: "#050505" }}>
+      {/* Header */}
+      <header
+        className="relative flex-none h-14 flex items-center px-4 gap-3 border-b border-white/[0.08] z-40"
+        style={{ background: "rgba(8,8,8,0.97)", backdropFilter: "blur(20px)" }}
+      >
+        {/* Left nav */}
+        <div className="flex items-center gap-1">
+          <Link
+            href="/"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[0.65rem] font-bold font-cinzel uppercase tracking-wide text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <ArrowLeft className="size-3" />
+            Szene
+          </Link>
+        </div>
 
-        <section className="rounded-md border border-white/10 bg-ink-950/75 p-4 shadow-2xl">
-          <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-sm uppercase tracking-[0.18em] text-ember-300">
-                Aktuelle Kampagne
-              </p>
-              <h2 className="mt-1 text-2xl font-semibold">
-                Falkenwacht - Die Korruption der Greifenstadt
-              </h2>
-              <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-400">
-                Krähenloch-Außenlager und Stadt unter der Unterstadt sind keine
-                eigenen Kampagnen, sondern spätere Abschnitte dieser Kampagne.
-              </p>
-            </div>
+        {/* Center logo */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2.5">
+          <div className="w-12 h-px" style={{ background: "linear-gradient(90deg, transparent, rgba(212,175,55,0.5))" }} />
+          <div className="w-1.5 h-1.5 rotate-45" style={{ background: GOLD, opacity: 0.7 }} />
+          <img src="/logo-eagle.png" width={22} height={22} alt="Falkenwacht" className="object-contain opacity-90" />
+          <h1 className="text-sm font-bold tracking-widest font-cinzel" style={{ color: GOLD }}>
+            Falkenwacht
+          </h1>
+          <div className="w-1.5 h-1.5 rotate-45" style={{ background: GOLD, opacity: 0.7 }} />
+          <div className="w-12 h-px" style={{ background: "linear-gradient(90deg, rgba(212,175,55,0.5), transparent)" }} />
+        </div>
+
+        {/* Right: account */}
+        <div className="ml-auto flex items-center gap-2">
+          <div className="relative" ref={accountRef}>
             <button
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-ember-400/50 bg-ember-500 px-3 text-sm font-bold text-ink-950 transition hover:bg-ember-400"
-              onClick={startNewGame}
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded transition-colors hover:bg-white/5"
+              onClick={() => setIsAccountOpen((o) => !o)}
+              style={{ background: "rgba(212,175,55,0.06)", border: "1px solid rgba(212,175,55,0.2)" }}
               type="button"
             >
-              <Play className="size-4" />
-              Neues Spiel starten
-            </button>
-          </div>
-
-          <div className="grid gap-3 lg:grid-cols-3">
-            {sessions.map((session) => (
-              <article
-                className="rounded-md border border-white/10 bg-white/[0.06] p-4"
-                key={session.title}
+              <div
+                className="w-5 h-5 rounded-full flex items-center justify-center text-[0.55rem] font-bold font-cinzel"
+                style={{ background: "rgba(212,175,55,0.25)", color: GOLD }}
               >
-                <div className="mb-3 flex items-start justify-between gap-3">
-                  <BookOpen className="mt-1 size-4 text-ember-300" />
-                  <span className="rounded-sm border border-white/10 bg-black/30 px-2 py-1 text-xs font-semibold text-slate-200">
-                    {session.status}
-                  </span>
-                </div>
-                <p className="text-xs uppercase tracking-[0.16em] text-ember-300">
-                  {session.title}
+                {username ? username[0].toUpperCase() : "?"}
+              </div>
+              <div className="text-left">
+                <p className="text-[0.55rem] font-cinzel uppercase tracking-wide leading-none" style={{ color: GOLD_DIM }}>
+                  Spieler
                 </p>
-                <h3 className="mt-1 text-lg font-semibold">
-                  {session.subtitle}
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed text-slate-400">
-                  {session.description}
+                <p className="text-[0.65rem] font-bold text-slate-100 leading-none mt-0.5 max-w-[100px] truncate">
+                  {username ?? "Abenteurer"}
                 </p>
-              </article>
-            ))}
-          </div>
-        </section>
+              </div>
+              <ChevronDown className="size-3 text-slate-500" />
+            </button>
 
-        <section className="rounded-md border border-white/10 bg-ink-950/75 p-4 shadow-2xl">
-          <div className="mb-5">
-            <p className="text-sm uppercase tracking-[0.18em] text-ember-300">
-              Automatische Speicherstände
-            </p>
-            <h2 className="mt-1 text-2xl font-semibold">
-              Offene Spielstände
-            </h2>
-            <p className="mt-2 text-sm leading-relaxed text-slate-400">
-              Jede Charakterauswahl und jede Szenenentscheidung legt automatisch
-              einen lokalen Speicherstand an. Für die spätere PostgreSQL-Logik
-              gilt hier bereits: maximal {MAX_ACCOUNT_SAVES} Speicherstände pro
-              Account und maximal {MAX_CAMPAIGN_SAVES} pro Kampagne.
-            </p>
-          </div>
-
-          {saveStates.length > 0 ? (
-            <div className="grid gap-3">
-              {saveStates.map((saveState) => {
-                const character = characters[saveState.characterId];
-                const dateLabel = new Intl.DateTimeFormat("de-DE", {
-                  dateStyle: "short",
-                  timeStyle: "short",
-                }).format(new Date(saveState.createdAt));
-
-                return (
-                  <article
-                    className="rounded-md border border-white/10 bg-white/[0.06] p-4"
-                    key={saveState.id}
-                  >
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.16em] text-ember-300">
-                          {saveState.sessionTitle}
-                        </p>
-                        <h3 className="mt-1 text-lg font-semibold">
-                          {saveState.sceneTitle}
-                        </h3>
-                        <p className="mt-2 text-sm leading-relaxed text-slate-400">
-                          {saveState.choiceLabel} · Hauptcharakter:{" "}
-                          {character.name}
-                        </p>
-                        <p className="mt-2 inline-flex items-center gap-2 text-xs text-slate-500">
-                          <Clock3 className="size-3" />
-                          {dateLabel}
-                        </p>
-                      </div>
-                      <Link
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-ember-400/50 bg-ember-500 px-3 text-sm font-bold text-ink-950 transition hover:bg-ember-400"
-                        href={`/?scene=${saveState.sceneId}&character=${saveState.characterId}`}
-                      >
-                        <Save className="size-4" />
-                        Laden
-                      </Link>
-                      <button
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/15 bg-white/10 px-3 text-sm font-semibold text-slate-100 transition hover:border-red-400/70 hover:bg-red-500/15"
-                        onClick={() => deleteSaveState(saveState.id)}
-                        type="button"
-                      >
-                        <Trash2 className="size-4" />
-                        Löschen
-                      </button>
+            {isAccountOpen && (
+              <div
+                className="absolute right-0 top-10 z-50 w-64 rounded-lg shadow-2xl"
+                style={{ background: "rgba(8,8,8,0.98)", border: "1px solid rgba(212,175,55,0.2)", backdropFilter: "blur(20px)" }}
+              >
+                <div className="p-4 border-b" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold font-cinzel shrink-0"
+                      style={{ background: "rgba(212,175,55,0.15)", border: "1px solid rgba(212,175,55,0.3)", color: GOLD }}
+                    >
+                      {username ? username[0].toUpperCase() : "?"}
                     </div>
-                  </article>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="rounded-md border border-white/10 bg-white/[0.06] p-4">
-              <ScrollText className="mb-3 size-5 text-ember-300" />
-              <h3 className="text-lg font-semibold">
-                Noch kein Speicherstand vorhanden
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-slate-400">
-                Starte die Kampagne, wähle einen Charakter und triff eine
-                Entscheidung. Danach erscheint der Speicherstand hier.
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-100 truncate">{username ?? "-"}</p>
+                      <p className="text-[0.6rem] font-cinzel uppercase tracking-wide mt-0.5" style={{ color: "rgba(212,175,55,0.6)" }}>
+                        Spieler #{userId ?? "..."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-2">
+                  <Link
+                    href="/"
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
+                    onClick={() => setIsAccountOpen(false)}
+                  >
+                    <Swords className="size-4" />
+                    Zur Szene
+                  </Link>
+                  <button
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm transition-colors mt-1"
+                    onClick={logout}
+                    style={{ color: "#fca5a5" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.1)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                    type="button"
+                  >
+                    <LogIn className="size-4 rotate-180" />
+                    Abmelden
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* Main content */}
+      <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-5xl flex flex-col gap-6">
+
+          {/* Page title */}
+          <div className="flex items-center gap-4">
+            <div className="flex-1 h-px" style={{ background: "linear-gradient(90deg, rgba(212,175,55,0.3), transparent)" }} />
+            <div>
+              <p className="text-[0.6rem] font-cinzel uppercase tracking-[0.25em] text-center" style={{ color: GOLD_DIM }}>
+                Kampagnenportal
               </p>
+              <h1 className="text-2xl font-bold font-cinzel text-center mt-0.5" style={{ color: GOLD }}>
+                Falkenwacht
+              </h1>
+            </div>
+            <div className="flex-1 h-px" style={{ background: "linear-gradient(90deg, transparent, rgba(212,175,55,0.3))" }} />
+          </div>
+
+          {/* Campaign card */}
+          <section
+            className="rounded-lg p-5 shadow-2xl"
+            style={{ background: "rgba(10,8,5,0.85)", border: "1px solid rgba(212,175,55,0.18)", backdropFilter: "blur(8px)" }}
+          >
+            <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-[0.6rem] font-cinzel uppercase tracking-[0.2em]" style={{ color: GOLD_DIM }}>
+                  Aktuelle Kampagne
+                </p>
+                <h2 className="mt-1 text-xl font-bold font-cinzel" style={{ color: GOLD }}>
+                  Die Korruption der Greifenstadt
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
+                  Krähenloch-Außenlager und Stadt unter der Unterstadt sind keine eigenen Kampagnen, sondern spätere Abschnitte dieser Kampagne.
+                </p>
+              </div>
               <button
-                className="mt-4 inline-flex h-10 items-center gap-2 rounded-md border border-white/15 bg-white/10 px-3 text-sm font-semibold text-slate-100 transition hover:border-ember-400/70 hover:bg-ember-500/15"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-bold font-cinzel uppercase tracking-wide transition-all shrink-0"
+                style={{ background: "rgba(212,175,55,0.15)", border: "1px solid rgba(212,175,55,0.4)", color: GOLD }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(212,175,55,0.25)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(212,175,55,0.15)")}
                 onClick={startNewGame}
                 type="button"
               >
-                <Sparkles className="size-4" />
-                Neues Spiel starten
+                <Play className="size-4" />
+                Neues Spiel
               </button>
             </div>
-          )}
-        </section>
-      </section>
-    </main>
+
+            <div className="grid gap-3 lg:grid-cols-3">
+              {sessions.map((session) => (
+                <article
+                  key={session.title}
+                  className="rounded-md p-4"
+                  style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(212,175,55,0.12)" }}
+                >
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <BookOpen className="mt-1 size-4 shrink-0" style={{ color: GOLD }} />
+                    <span
+                      className="rounded px-2 py-0.5 text-[0.6rem] font-bold font-cinzel uppercase tracking-wide"
+                      style={{
+                        background: session.status === "Aktiv" ? "rgba(212,175,55,0.15)" : "rgba(255,255,255,0.05)",
+                        border: session.status === "Aktiv" ? "1px solid rgba(212,175,55,0.35)" : "1px solid rgba(255,255,255,0.1)",
+                        color: session.status === "Aktiv" ? GOLD : "#94a3b8",
+                      }}
+                    >
+                      {session.status}
+                    </span>
+                  </div>
+                  <p className="text-[0.6rem] font-cinzel uppercase tracking-[0.18em]" style={{ color: GOLD_DIM }}>
+                    {session.title}
+                  </p>
+                  <h3 className="mt-1 text-base font-bold font-cinzel text-slate-100">{session.subtitle}</h3>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-500">{session.description}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          {/* Save slots */}
+          <section
+            className="rounded-lg p-5 shadow-2xl"
+            style={{ background: "rgba(10,8,5,0.85)", border: "1px solid rgba(212,175,55,0.18)", backdropFilter: "blur(8px)" }}
+          >
+            <div className="mb-5">
+              <p className="text-[0.6rem] font-cinzel uppercase tracking-[0.2em]" style={{ color: GOLD_DIM }}>
+                Automatische Speicherstände
+              </p>
+              <h2 className="mt-1 text-xl font-bold font-cinzel" style={{ color: GOLD }}>
+                Offene Spielstände
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                Jede Entscheidung legt automatisch einen lokalen Speicherstand an. Max. {MAX_ACCOUNT_SAVES} pro Account, {MAX_CAMPAIGN_SAVES} pro Kampagne.
+              </p>
+            </div>
+
+            {saveStates.length > 0 ? (
+              <div className="grid gap-3">
+                {saveStates.map((saveState) => {
+                  const character = characters[saveState.characterId];
+                  const dateLabel = new Intl.DateTimeFormat("de-DE", {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  }).format(new Date(saveState.createdAt));
+
+                  return (
+                    <article
+                      key={saveState.id}
+                      className="rounded-md p-4"
+                      style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(212,175,55,0.1)" }}
+                    >
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex items-start gap-3">
+                          <div
+                            className="w-10 h-10 rounded shrink-0 flex items-center justify-center text-xs font-bold font-cinzel"
+                            style={{ background: "rgba(212,175,55,0.12)", border: "1px solid rgba(212,175,55,0.25)", color: GOLD }}
+                          >
+                            {character.name[0]}
+                          </div>
+                          <div>
+                            <p className="text-[0.6rem] font-cinzel uppercase tracking-[0.16em]" style={{ color: GOLD_DIM }}>
+                              {saveState.sessionTitle}
+                            </p>
+                            <h3 className="mt-0.5 text-sm font-bold text-slate-100">{saveState.sceneTitle}</h3>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {saveState.choiceLabel} · {character.name}
+                            </p>
+                            <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-slate-600">
+                              <Clock3 className="size-3" />
+                              {dateLabel}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Link
+                            className="inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-xs font-bold font-cinzel uppercase tracking-wide transition-all"
+                            style={{ background: "rgba(212,175,55,0.15)", border: "1px solid rgba(212,175,55,0.35)", color: GOLD }}
+                            href={`/?scene=${saveState.sceneId}&character=${saveState.characterId}`}
+                          >
+                            <Save className="size-3.5" />
+                            Laden
+                          </Link>
+                          <button
+                            className="inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-xs font-semibold transition-all text-slate-400 hover:text-red-300"
+                            style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "rgba(239,68,68,0.1)";
+                              e.currentTarget.style.borderColor = "rgba(239,68,68,0.35)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                              e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
+                            }}
+                            onClick={() => deleteSaveState(saveState.id)}
+                            type="button"
+                          >
+                            <Trash2 className="size-3.5" />
+                            Löschen
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div
+                className="rounded-md p-6 text-center"
+                style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)" }}
+              >
+                <ScrollText className="mx-auto mb-3 size-6 opacity-30" style={{ color: GOLD }} />
+                <h3 className="text-base font-bold font-cinzel text-slate-300">Kein Spielstand vorhanden</h3>
+                <p className="mt-2 text-sm leading-relaxed text-slate-500">
+                  Starte die Kampagne, wähle einen Charakter und triff eine Entscheidung.
+                </p>
+                <button
+                  className="mt-4 inline-flex h-9 items-center gap-2 rounded-md px-4 text-xs font-bold font-cinzel uppercase tracking-wide transition-all"
+                  style={{ background: "rgba(212,175,55,0.12)", border: "1px solid rgba(212,175,55,0.3)", color: GOLD }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(212,175,55,0.22)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(212,175,55,0.12)")}
+                  onClick={startNewGame}
+                  type="button"
+                >
+                  <Sparkles className="size-3.5" />
+                  Neues Spiel starten
+                </button>
+              </div>
+            )}
+          </section>
+        </div>
+      </main>
+    </div>
   );
 }
