@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { isLoggedIn, verifyToken } from "./auth";
+import { isLoggedIn } from "./auth";
 
 export function useAuthGuard() {
   const router = useRouter();
@@ -10,10 +10,6 @@ export function useAuthGuard() {
   useEffect(() => {
     if (!isLoggedIn()) {
       router.replace("/login");
-      return;
     }
-    verifyToken().then((valid) => {
-      if (!valid) router.replace("/login");
-    });
   }, [router]);
 }

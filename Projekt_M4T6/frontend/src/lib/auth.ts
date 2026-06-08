@@ -8,6 +8,7 @@ export async function login(username: string, password: string): Promise<AuthRes
     body: JSON.stringify({ username, password }),
   });
   localStorage.setItem("token", data.token);
+  localStorage.setItem("username", data.username);
   return data;
 }
 
@@ -17,11 +18,13 @@ export async function register(username: string, password: string): Promise<Auth
     body: JSON.stringify({ username, password }),
   });
   localStorage.setItem("token", data.token);
+  localStorage.setItem("username", data.username);
   return data;
 }
 
 export function logout(): void {
   localStorage.removeItem("token");
+  localStorage.removeItem("username");
   window.location.href = "/login";
 }
 
@@ -30,15 +33,22 @@ export function getToken(): string | null {
   return localStorage.getItem("token");
 }
 
-export function isLoggedIn(): boolean {
-  return Boolean(getToken());
+export function getUsername(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("username");
 }
 
-export async function verifyToken(): Promise<boolean> {
+export function getUserId(): number | null {
+  const token = getToken();
+  if (!token) return null;
   try {
-    await apiFetch("/auth/me");
-    return true;
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return typeof payload.sub === "string" ? parseInt(payload.sub, 10) : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+export function isLoggedIn(): boolean {
+  return Boolean(getToken());
 }

@@ -10,10 +10,10 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { isLoggedIn, verifyToken } from "@/lib/auth";
+import { getUsername, getUserId, isLoggedIn, logout } from "@/lib/auth";
 import dynamic from "next/dynamic";
 
 const D20Component = dynamic(() => import("@/components/D20"), { ssr: false });
@@ -76,8 +76,7 @@ const createId = () =>
   globalThis.crypto?.randomUUID?.() ??
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
-const toBackendCharacterId = (characterId: CharacterId) =>
-  characterId === "ryu" ? "ayane" : "johan";
+const toBackendCharacterId = (characterId: CharacterId) => characterId;
 
 const toFrontendCharacterId = (characterId: string): CharacterId | null => {
   if (characterId === "ayane") {
@@ -407,6 +406,10 @@ const findMatchingSaveState = (
 
 export default function Home() {
   const router = useRouter();
+  const [username, setUsername] = useState<string | null>(null);
+  const [userId, setUserId] = useState<number | null>(null);
+  const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement>(null);
   const [currentSceneId, setCurrentSceneId] = useState(initialSceneId);
   const [saveRestored, setSaveRestored] = useState(false);
   const [selectedCharacterId, setSelectedCharacterId] =
@@ -509,8 +512,20 @@ export default function Home() {
 
   useEffect(() => {
     if (!isLoggedIn()) { router.replace("/login"); return; }
-    verifyToken().then((valid) => { if (!valid) router.replace("/login"); });
+    setUsername(getUsername());
+    setUserId(getUserId());
   }, [router]);
+
+  useEffect(() => {
+    if (!isAccountOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (accountRef.current && !accountRef.current.contains(e.target as Node)) {
+        setIsAccountOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [isAccountOpen]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -2512,6 +2527,62 @@ export default function Home() {
           </div>
           {/* Vertical divider */}
           <div className="w-px h-6 mx-2" style={{background: 'rgba(255,255,255,0.1)'}} />
+          {/* Account button + dropdown */}
+          <div className="relative mr-1" ref={accountRef}>
+            <button
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded transition-colors hover:bg-white/5"
+              onClick={() => setIsAccountOpen((o) => !o)}
+              style={{background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.2)'}}
+              type="button"
+            >
+              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[0.55rem] font-bold font-cinzel" style={{background: 'rgba(212,175,55,0.25)', color: '#d4af37'}}>
+                {username ? username[0].toUpperCase() : "?"}
+              </div>
+              <div className="text-left">
+                <p className="text-[0.55rem] font-cinzel uppercase tracking-wide leading-none" style={{color: 'rgba(212,175,55,0.7)'}}>Spieler</p>
+                <p className="text-[0.62rem] font-bold text-slate-100 leading-none mt-0.5 max-w-[120px] truncate">{username ?? "..."}</p>
+              </div>
+              <ChevronDown className="w-3 h-3 text-slate-500" />
+            </button>
+            {isAccountOpen ? (
+              <div className="absolute right-0 top-10 z-50 w-64 rounded-lg shadow-2xl" style={{background: 'rgba(8,8,8,0.98)', border: '1px solid rgba(212,175,55,0.2)', backdropFilter: 'blur(20px)'}}>
+                <div className="p-4 border-b" style={{borderColor: 'rgba(255,255,255,0.08)'}}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold font-cinzel shrink-0" style={{background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.3)', color: '#d4af37'}}>
+                      {username ? username[0].toUpperCase() : "?"}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-100 truncate">{username ?? "-"}</p>
+                      <p className="text-[0.6rem] font-cinzel uppercase tracking-wide mt-0.5" style={{color: 'rgba(212,175,55,0.6)'}}>
+                        Spieler #{userId ?? "..."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-2">
+                  <Link
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
+                    href="/campaigns"
+                    onClick={() => setIsAccountOpen(false)}
+                  >
+                    <ScrollText className="w-4 h-4" />
+                    Kampagnen & Speicherstände
+                  </Link>
+                  <button
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm transition-colors mt-1"
+                    onClick={logout}
+                    style={{color: '#fca5a5'}}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239,68,68,0.1)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    type="button"
+                  >
+                    <LogIn className="w-4 h-4 rotate-180" />
+                    Abmelden
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
           {/* DM Avatar */}
           <button className="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/5 transition-colors" onClick={() => setIsDmPanelOpen((o) => !o)} type="button">
             <div className="relative">
@@ -3648,6 +3719,34 @@ export default function Home() {
             <div className="flex-1 relative overflow-hidden" style={{minHeight: 0}}>
               <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage: `url('${currentScene.imageUrl}')`}} />
               <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-transparent to-transparent" />
+              {/* Character + companion overlay — top-left corner */}
+              {!isCharacterSelection && activeCharacter ? (
+                <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5">
+                  {/* Main character */}
+                  <div className="flex items-center gap-2 rounded-md px-2 py-1.5" style={{background: 'rgba(4,4,8,0.72)', border: '1px solid rgba(212,175,55,0.22)', backdropFilter: 'blur(6px)'}}>
+                    <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 border" style={{borderColor: 'rgba(212,175,55,0.4)'}}>
+                      <Image alt={activeCharacter.name} className="w-full h-full object-cover object-top" height={28} src={activeCharacter.modelImageUrl} width={28} />
+                    </div>
+                    <div>
+                      <p className="text-[0.58rem] font-cinzel uppercase tracking-[0.18em] leading-none" style={{color: 'rgba(212,175,55,0.75)'}}>Hauptcharakter</p>
+                      <p className="text-[0.7rem] font-bold text-slate-100 leading-none mt-0.5">{activeCharacter.name}</p>
+                      <p className="text-[0.55rem] text-slate-500 leading-none mt-0.5">{activeCharacter.className} · {activeCharacter.subclassName}</p>
+                    </div>
+                  </div>
+                  {/* Companion */}
+                  {activeNpc ? (
+                    <div className="flex items-center gap-2 rounded-md px-2 py-1.5" style={{background: 'rgba(4,4,8,0.6)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(6px)'}}>
+                      <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 border" style={{borderColor: 'rgba(255,255,255,0.15)'}}>
+                        <Image alt={activeNpc.name} className="w-full h-full object-cover object-top" height={20} src={activeNpc.modelImageUrl} width={20} />
+                      </div>
+                      <div>
+                        <p className="text-[0.55rem] text-slate-500 leading-none font-cinzel uppercase tracking-wide">Begleitung</p>
+                        <p className="text-[0.62rem] font-semibold text-slate-300 leading-none mt-0.5">{activeNpc.name}</p>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="absolute inset-0 p-0">
           <>
             {isCombatScene && combatRoundState.round > 0 ? (

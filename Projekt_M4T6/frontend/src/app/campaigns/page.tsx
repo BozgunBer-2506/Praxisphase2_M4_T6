@@ -3,19 +3,22 @@
 import {
   ArrowLeft,
   BookOpen,
+  ChevronDown,
   Clock3,
+  LogIn,
   Trash2,
   Play,
   Save,
   ScrollText,
-  ShieldCheck,
   Sparkles,
+  Swords,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { characters, type CharacterId } from "@/data/scenes";
-import { isLoggedIn, logout, verifyToken } from "@/lib/auth";
+import { getUsername, getUserId, isLoggedIn, logout } from "@/lib/auth";
+import { listBackendSaves } from "@/lib/backendApi";
 
 const SAVE_KEY = "falkenwacht.saveStates";
 const LAST_SAVE_KEY = "falkenwacht.lastSave";
@@ -60,19 +63,66 @@ const sessions = [
 export default function CampaignsPage() {
   const router = useRouter();
   const [saveStates, setSaveStates] = useState<SaveState[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [username, setUsername] = useState<string | null>(null);
+  const [userId, setUserId] = useState<number | null>(null);
+  const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isLoggedIn()) { router.replace("/login"); return; }
-    verifyToken().then((valid) => { if (!valid) router.replace("/login"); });
+    setUsername(getUsername());
+    setUserId(getUserId());
+    setLoaded(true);
   }, [router]);
 
   useEffect(() => {
+    if (!isAccountOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (accountRef.current && !accountRef.current.contains(e.target as Node)) {
+        setIsAccountOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [isAccountOpen]);
+
+  useEffect(() => {
+    if (!loaded) return;
+
+    let localSaves: SaveState[] = [];
     try {
-      setSaveStates(JSON.parse(localStorage.getItem(SAVE_KEY) ?? "[]"));
+      localSaves = JSON.parse(localStorage.getItem(SAVE_KEY) ?? "[]");
     } catch {
-      setSaveStates([]);
+      localSaves = [];
     }
-  }, []);
+
+    listBackendSaves()
+      .then((backendSaves) => {
+        const localIds = new Set(localSaves.map((s) => s.id));
+        const backendOnly = backendSaves
+          .filter((bs) => !localIds.has(`backend-${bs.id}`))
+          .map((bs) => {
+            const charId = (bs.character_id === "ryu" || bs.character_id === "ayane")
+              ? (bs.character_id as CharacterId)
+              : "ryu";
+            return {
+              id: `backend-${bs.id}`,
+              campaignTitle: "Falkenwacht - Die Korruption der Greifenstadt",
+              sessionTitle: "Session 1",
+              sceneId: "prolog",
+              sceneTitle: `Szene ${bs.scene_number}`,
+              characterId: charId,
+              choiceLabel: bs.slot_name,
+              createdAt: new Date().toISOString(),
+            } satisfies SaveState;
+          });
+        setSaveStates([...localSaves, ...backendOnly]);
+      })
+      .catch(() => {
+        setSaveStates(localSaves);
+      });
+  }, [loaded]);
 
   const deleteSaveState = (saveStateId: string) => {
     const nextSaveStates = saveStates.filter(
@@ -104,6 +154,8 @@ export default function CampaignsPage() {
     window.location.href = "/";
   };
 
+  if (!loaded) return null;
+
   return (
     <main className="min-h-screen overflow-y-auto px-4 py-5 text-slate-50 sm:px-6 lg:px-8" style={{maxHeight: '100dvh'}}>
       <section className="mx-auto flex min-h-[calc(100vh-2.5rem)] max-w-6xl flex-col gap-5">
@@ -124,25 +176,62 @@ export default function CampaignsPage() {
             </h1>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 rounded-md px-3 py-2" style={{background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.2)'}}>
-              <ShieldCheck className="size-4" style={{color: '#d4af37'}} />
-              <div>
-                <p className="text-[0.62rem] uppercase tracking-[0.18em] text-slate-400 font-cinzel">
-                  Spielerbereich
-                </p>
-                <p className="text-xs font-semibold text-slate-100">
-                  Kampagne & Speicherstände
-                </p>
-              </div>
+            <div className="relative" ref={accountRef}>
+              <button
+                className="flex items-center gap-2 rounded-md px-3 py-2 transition-colors hover:bg-white/5"
+                onClick={() => setIsAccountOpen((o) => !o)}
+                style={{background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.2)'}}
+                type="button"
+              >
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold font-cinzel shrink-0" style={{background: 'rgba(212,175,55,0.2)', color: '#d4af37'}}>
+                  {username ? username[0].toUpperCase() : "?"}
+                </div>
+                <div className="text-left">
+                  <p className="text-[0.55rem] font-cinzel uppercase tracking-wide leading-none" style={{color: 'rgba(212,175,55,0.7)'}}>Eingeloggt als</p>
+                  <p className="text-xs font-bold text-slate-100 leading-none mt-0.5 max-w-[140px] truncate">{username ?? "Abenteurer"}</p>
+                </div>
+                <ChevronDown className="size-3 text-slate-500" />
+              </button>
+              {isAccountOpen ? (
+                <div className="absolute right-0 top-12 z-50 w-64 rounded-lg shadow-2xl" style={{background: 'rgba(8,8,8,0.98)', border: '1px solid rgba(212,175,55,0.2)', backdropFilter: 'blur(20px)'}}>
+                  <div className="p-4 border-b" style={{borderColor: 'rgba(255,255,255,0.08)'}}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold font-cinzel shrink-0" style={{background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.3)', color: '#d4af37'}}>
+                        {username ? username[0].toUpperCase() : "?"}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-slate-100 truncate">{username ?? "-"}</p>
+                        <p className="text-[0.6rem] font-cinzel uppercase tracking-wide mt-1" style={{color: 'rgba(212,175,55,0.6)'}}>
+                          Spieler #{userId ?? "..."}
+                        </p>
+                        <p className="text-[0.6rem] text-slate-500 mt-0.5">Falkenwacht Account</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-2">
+                    <Link
+                      className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
+                      href="/"
+                      onClick={() => setIsAccountOpen(false)}
+                    >
+                      <Swords className="size-4" />
+                      Zur Szene
+                    </Link>
+                    <button
+                      className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm transition-colors mt-1"
+                      onClick={logout}
+                      style={{color: '#fca5a5'}}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239,68,68,0.1)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      type="button"
+                    >
+                      <LogIn className="size-4 rotate-180" />
+                      Abmelden
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
-            <button
-              className="rounded-md px-3 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors"
-              onClick={logout}
-              style={{background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)'}}
-              type="button"
-            >
-              Abmelden
-            </button>
           </div>
         </header>
 
