@@ -18,7 +18,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="de">
-      <body className={`h-dvh overflow-hidden ${cinzel.variable} ${inter.variable}`}>{children}</body>
+      <body className={`h-dvh overflow-hidden ${cinzel.variable} ${inter.variable}`} suppressHydrationWarning>{children}</body>
     </html>
   );
 }
