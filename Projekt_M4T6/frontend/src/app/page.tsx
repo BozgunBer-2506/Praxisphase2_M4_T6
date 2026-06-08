@@ -405,7 +405,6 @@ const findMatchingSaveState = (
 };
 
 export default function Home() {
-  const router = useRouter();
   const [username, setUsername] = useState<string | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
@@ -511,10 +510,11 @@ export default function Home() {
   };
 
   useEffect(() => {
-    if (!isLoggedIn()) { router.replace("/login"); return; }
-    setUsername(getUsername());
-    setUserId(getUserId());
-  }, [router]);
+    if (isLoggedIn()) {
+      setUsername(getUsername());
+      setUserId(getUserId());
+    }
+  }, []);
 
   useEffect(() => {
     if (!isAccountOpen) return;
