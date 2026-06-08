@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Header
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import Session
@@ -45,6 +46,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="DnD Visual Novel API", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class RegisterRequest(BaseModel):
