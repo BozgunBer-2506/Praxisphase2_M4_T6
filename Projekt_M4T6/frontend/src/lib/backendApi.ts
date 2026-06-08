@@ -1,5 +1,5 @@
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api/backend";
+  process.env.NEXT_PUBLIC_API_BASE_URL || "/api/backend";
 
 export type InventoryAction = "use" | "equip" | "unequip" | "drop";
 
@@ -257,6 +257,17 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   return response.json() as Promise<T>;
+}
+
+export type BackendSaveSummary = {
+  id: number;
+  slot_name: string;
+  character_id: string;
+  scene_number: number;
+};
+
+export async function listBackendSaves() {
+  return request<BackendSaveSummary[]>("/saves");
 }
 
 export async function getInventoryView(inventory: InventoryStateItem[]) {

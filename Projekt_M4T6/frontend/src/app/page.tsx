@@ -1,25 +1,22 @@
 "use client";
 
 import {
-  BookOpen,
-  Bot,
-  ChevronDown,
-  ChevronRight,
-  ClipboardList,
-  Dice5,
-  HeartPulse,
-  LogIn,
-  Palette,
-  ScrollText,
-  Send,
-  ShieldCheck,
-  Swords,
-  UserPlus,
-  X,
+  BookOpen, Bot, ChevronDown, ChevronRight, ClipboardList, Hourglass,
+  Dice5, Drama, Eye, Feather, Flame, FlaskConical, HandMetal,
+  HeartPulse, Leaf, LogIn, MessageSquare, Music, Palette, Scan, ScrollText,
+  Search, Send, ShieldCheck, Skull, Snowflake, Sparkles,
+  Star, Sword, Swords, Telescope, Trees, UserPlus, Waves,
+  Wind, Wrench, X, Zap,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
+import { getUsername, getUserId, isLoggedIn, logout } from "@/lib/auth";
+import dynamic from "next/dynamic";
+
+const D20Component = dynamic(() => import("@/components/D20"), { ssr: false });
 import {
   type CharacterId,
   type Choice,
@@ -69,7 +66,7 @@ const LAST_SAVE_KEY = "falkenwacht.lastSave";
 const MAX_ACCOUNT_SAVES = 15;
 const MAX_CAMPAIGN_SAVES = 5;
 const CAMPAIGN_TITLE = "Falkenwacht - Die Korruption der Greifenstadt";
-const WORD_REVEAL_MS = 85;
+const WORD_REVEAL_MS = 35;
 const diceTypes = [4, 6, 8, 10, 12, 20, 100] as const;
 const BACKEND_SLOT_NAME = "autosave";
 const BACKEND_COMBAT_SCENE_NUMBER = 3;
@@ -79,8 +76,7 @@ const createId = () =>
   globalThis.crypto?.randomUUID?.() ??
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
-const toBackendCharacterId = (characterId: CharacterId) =>
-  characterId === "ryu" ? "ayane" : "johan";
+const toBackendCharacterId = (characterId: CharacterId) => characterId;
 
 const toFrontendCharacterId = (characterId: string): CharacterId | null => {
   if (characterId === "ayane") {
@@ -180,30 +176,22 @@ const initialInventory: InventoryStateItem[] = [
 const characterSheets = {
   ryu: {
     saves: [
-      ["STR", "+6"],
-      ["DEX", "+2"],
-      ["CON", "+6"],
-      ["WIS", "+1"],
+      ["GEW", "+7"],
+      ["INT", "+5"],
+      ["STÄ", "+1"],
+      ["WEI", "+2"],
     ],
     skills: [
-      ["Acrobatics", "+2"],
-      ["Animal Handling", "+1"],
-      ["Arcana", "-1"],
-      ["Athletics", "+3"],
-      ["Deception", "+3"],
-      ["History", "-1"],
-      ["Insight", "+4"],
-      ["Intimidation", "+0"],
-      ["Investigation", "-1"],
-      ["Medicine", "+1"],
-      ["Nature", "-1"],
-      ["Perception", "+1"],
-      ["Performance", "+0"],
-      ["Persuasion", "+3"],
-      ["Religion", "-1"],
-      ["Sleight of Hand", "+2"],
-      ["Stealth", "+5"],
-      ["Survival", "+4"],
+      ["Akrobatik", "+7"],
+      ["Überzeugen", "+2"],
+      ["Heimlichkeit", "+9"],
+      ["Einschüchtern", "+1"],
+      ["Fingerfertigkeit", "+8"],
+      ["Überleben", "+3"],
+      ["Athletik", "+4"],
+      ["Motivation", "+2"],
+      ["Wahrnehmung", "+5"],
+      ["Arkane Kunde", "+0"],
     ],
     actions: [
       {
@@ -417,7 +405,13 @@ const findMatchingSaveState = (
 };
 
 export default function Home() {
+  const router = useRouter();
+  const [username, setUsername] = useState<string | null>(null);
+  const [userId, setUserId] = useState<number | null>(null);
+  const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement>(null);
   const [currentSceneId, setCurrentSceneId] = useState(initialSceneId);
+  const [saveRestored, setSaveRestored] = useState(false);
   const [selectedCharacterId, setSelectedCharacterId] =
     useState<CharacterId | null>(null);
   const [dialogueLineIndex, setDialogueLineIndex] = useState(0);
@@ -438,8 +432,9 @@ export default function Home() {
   const [rollModifier, setRollModifier] = useState(0);
   const [rollResult, setRollResult] = useState<RollResult | null>(null);
   const [rollAnimationKey, setRollAnimationKey] = useState(0);
-  const [diceColor, setDiceColor] = useState<DiceColor>("ember");
-  const [isSheetExpanded, setIsSheetExpanded] = useState(true);
+  const [d20TriggerKey, setD20TriggerKey] = useState(0);
+  const [diceColor, setDiceColor] = useState<DiceColor>("arcane");
+  const [isSheetExpanded, setIsSheetExpanded] = useState(false);
   const [isSkillsExpanded, setIsSkillsExpanded] = useState(true);
   const [isActionsExpanded, setIsActionsExpanded] = useState(true);
   const [isInventoryExpanded, setIsInventoryExpanded] = useState(true);
@@ -503,7 +498,7 @@ export default function Home() {
 
   const diceColorClass: Record<DiceColor, string> = {
     ember: "from-ember-400 to-orange-700 text-ink-950 border-ember-300",
-    arcane: "from-cyan-300 to-blue-700 text-ink-950 border-cyan-200",
+    arcane: "from-[#080e30] to-[#0a0a20] text-white border-[#d4af37]/60",
     venom: "from-lime-300 to-emerald-700 text-ink-950 border-lime-200",
     blood: "from-red-400 to-rose-900 text-white border-red-300",
   };
@@ -514,6 +509,23 @@ export default function Home() {
     venom: "bg-lime-400",
     blood: "bg-red-500",
   };
+
+  useEffect(() => {
+    if (!isLoggedIn()) { router.replace("/login"); return; }
+    setUsername(getUsername());
+    setUserId(getUserId());
+  }, [router]);
+
+  useEffect(() => {
+    if (!isAccountOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (accountRef.current && !accountRef.current.contains(e.target as Node)) {
+        setIsAccountOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [isAccountOpen]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -547,6 +559,8 @@ export default function Home() {
       setCurrentSceneId(lastSaveState.sceneId);
       setSelectedCharacterId(lastSaveState.characterId);
     }
+
+    setSaveRestored(true);
   }, []);
 
   const currentScene = findScene(currentSceneId);
@@ -772,10 +786,30 @@ export default function Home() {
     inventoryState,
     runtimeStats,
   ]);
+  const SKILL_ALIASES: Record<string, string[]> = {
+    Acrobatics:        ['Akrobatik'],       Akrobatik:         ['Acrobatics'],
+    Arcana:            ['Arkane Kunde'],    'Arkane Kunde':    ['Arcana'],
+    Athletics:         ['Athletik'],        Athletik:          ['Athletics'],
+    Deception:         ['Täuschen'],
+    History:           ['Geschichte'],
+    Insight:           ['Motivation'],      Motivation:        ['Insight'],
+    Intimidation:      ['Einschüchtern'],   Einschüchtern:     ['Intimidation'],
+    Investigation:     ['Nachforschung', 'Untersuchung'],
+    Medicine:          ['Heilkunde'],
+    Nature:            ['Naturkunde'],
+    Perception:        ['Wahrnehmung'],     Wahrnehmung:       ['Perception'],
+    Performance:       ['Auftreten'],
+    Persuasion:        ['Überzeugen'],      Überzeugen:        ['Persuasion'],
+    'Sleight of Hand': ['Fingerfertigkeit'],Fingerfertigkeit:  ['Sleight of Hand'],
+    Stealth:           ['Heimlichkeit'],    Heimlichkeit:      ['Stealth'],
+    Survival:          ['Überleben'],       Überleben:         ['Survival'],
+    'Animal Handling': ['Tierumgang'],
+  };
   const pendingSkillNames = new Set(
-    pendingCheck?.checks
+    (pendingCheck?.checks
       .map((check) => check.skill)
-      .filter((skill): skill is string => Boolean(skill)) ?? [],
+      .filter((skill): skill is string => Boolean(skill)) ?? [])
+      .flatMap((name) => [name, ...(SKILL_ALIASES[name] ?? [])]),
   );
 
   const addGameLog = (entry: Omit<GameLogEntry, "id" | "createdAt">) => {
@@ -2387,10 +2421,12 @@ export default function Home() {
     await sendDmHelpMessage(trimmedInput);
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     void syncInventoryView();
   }, [inventoryState]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     void syncBackendSave();
   }, [backendSaveState, currentSceneId, selectedCharacterId]);
@@ -2419,301 +2455,467 @@ export default function Home() {
   ]);
 
   return (
-    <main className="min-h-dvh overflow-y-auto px-3 py-3 text-slate-50 sm:px-4 lg:h-dvh lg:overflow-hidden lg:px-5">
-      <section className="mx-auto flex min-h-dvh w-full max-w-[100rem] flex-col gap-3 lg:h-full lg:min-h-0">
-        <header className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.22em] text-ember-400">
-              Falkenwacht MVP
-            </p>
-            <h1 className="mt-1 text-2xl font-bold leading-tight">
-              {currentScene.title}
-            </h1>
+    <div className="h-dvh flex flex-col overflow-hidden text-white" style={{background: '#050505'}}>
+      {/* HEADER */}
+      <header className="relative flex-none h-14 flex items-center px-4 gap-3 border-b border-white/[0.08] z-40" style={{background: 'rgba(8,8,8,0.97)', backdropFilter: 'blur(20px)'}}>
+        {/* Logo + nav */}
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Logo + campaign name */}
+          <div className="hidden lg:flex items-center gap-2 mr-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src='/logo-eagle.svg' alt='Falkenwacht' width={28} height={28} style={{filter: 'drop-shadow(0 0 4px rgba(212,175,55,0.5))'}} />
+
           </div>
-          <div className="relative flex flex-wrap items-center gap-2">
+          <nav className="hidden lg:flex items-center gap-0.5">
             <Link
-              className="flex items-center gap-2 rounded-md border border-ember-400/30 bg-ink-950/70 px-3 py-2 shadow-glow transition hover:border-ember-400/70 hover:bg-ember-500/15"
               href="/campaigns"
-              title="Kampagnenportal öffnen"
+              className="px-3 py-1.5 text-[0.68rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] transition-all relative text-slate-400 hover:text-slate-200 hover:bg-white/5"
             >
-              <ShieldCheck className="size-4 text-ember-400" />
-              <div>
-                <p className="text-[0.65rem] uppercase tracking-[0.18em] text-slate-400">
-                  Kampagnenportal
-                </p>
-                <p className="text-xs font-semibold text-slate-100">
-                  Kampagnen & Speicherstände
-                </p>
-              </div>
+              Kampagne
             </Link>
             <Link
-              className="inline-flex h-11 items-center gap-2 rounded-md border border-white/15 bg-white/10 px-3 text-sm font-semibold text-slate-100 transition hover:border-ember-400/70 hover:bg-ember-500/15"
               href="/login"
-              title="Zum Login"
+              className="px-3 py-1.5 text-[0.68rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] transition-all text-slate-400 hover:text-slate-200 hover:bg-white/5"
             >
-              <LogIn className="size-4" />
               Login
-            </Link>
-            <Link
-              className="inline-flex h-11 items-center gap-2 rounded-md border border-ember-400/50 bg-ember-500 px-3 text-sm font-bold text-ink-950 transition hover:bg-ember-400"
-              href="/login"
-              title="Zur Registrierung"
-            >
-              <UserPlus className="size-4" />
-              Registrieren
             </Link>
             {isCombatScene ? (
               <Link
-                className="inline-flex h-11 items-center gap-2 rounded-md border border-red-400/40 bg-red-500/15 px-3 text-sm font-bold text-red-100 transition hover:border-red-300 hover:bg-red-500/25"
                 href="/combat"
+                className="px-3 py-1.5 text-[0.68rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] transition-all text-red-400 hover:text-red-200 hover:bg-red-500/10"
                 onClick={prepareCombatRouteHandoff}
-                title="Combat-Screen öffnen"
               >
-                <Swords className="size-4" />
                 Combat
               </Link>
             ) : null}
-            <button
-              aria-label="DM-Chat öffnen"
-              className="inline-flex h-11 items-center gap-2 rounded-md border border-white/15 bg-white/10 px-3 text-sm font-bold text-slate-100 shadow-glow transition hover:border-ember-400/70 hover:bg-ember-500/15"
-              onClick={() => setIsDmPanelOpen((isOpen) => !isOpen)}
-              title="DM-Chat öffnen"
-              type="button"
-            >
-              <Bot className="size-5" />
-              DM
-            </button>
-            <button
-              aria-label="Game-Log öffnen"
-              className="inline-flex h-11 items-center gap-2 rounded-md border border-white/15 bg-white/10 px-3 text-sm font-bold text-slate-100 shadow-glow transition hover:border-ember-400/70 hover:bg-ember-500/15"
-              onClick={() => setIsLogPanelOpen((isOpen) => !isOpen)}
-              title="Game-Log öffnen"
-              type="button"
-            >
-              <ClipboardList className="size-5" />
-              Log
-            </button>
-            {isLogPanelOpen ? (
-              <div className="absolute right-0 top-14 z-50 max-h-96 w-96 overflow-y-auto rounded-md border border-white/10 bg-ink-950/95 p-3 shadow-2xl">
-                <p className="mb-3 text-sm font-bold">Game-Log</p>
-                <div className="space-y-2">
-                  {gameLog.map((entry) => (
-                    <article
-                      className="rounded-md border border-white/10 bg-white/[0.06] p-2 text-sm"
-                      key={entry.id}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <p className="font-bold text-slate-100">
-                          {entry.title}
-                        </p>
-                        {entry.total !== undefined ? (
-                          <span className="rounded-sm bg-ember-500 px-2 py-1 text-xs font-black text-ink-950">
-                            {entry.total}
-                          </span>
-                        ) : null}
-                      </div>
-                      <p className="mt-1 text-xs leading-relaxed text-slate-400">
-                        {entry.detail}
-                      </p>
-                    </article>
-                  ))}
-                </div>
-              </div>
-            ) : null}
+          </nav>
+        </div>
 
-            {false ? (
-              <div className="absolute right-0 top-14 z-50 w-80 rounded-md border border-white/10 bg-ink-950/95 p-3 shadow-2xl">
-                <div className="mb-3 flex items-center justify-between">
-                  <p className="text-sm font-bold text-slate-100">Würfel</p>
+        {/* Center title */}
+        <div className="flex-1 text-center hidden md:block">
+          <h1 className="text-base font-bold tracking-widest font-cinzel" style={{color: '#d4af37'}}>
+            {CAMPAIGN_TITLE.replace(' - Die Korruption der Greifenstadt', '')}
+            {currentScene.title !== 'Charakterwahl' ? `: ${currentScene.title}` : ''}
+          </h1>
+          {/* Decorative divider */}
+          <div className="flex items-center justify-center gap-1 mt-0.5">
+            <div className="w-12 h-px" style={{background: 'linear-gradient(90deg, transparent, rgba(212,175,55,0.5))'}} />
+            <div className="w-1.5 h-1.5 rotate-45" style={{background: '#d4af37', opacity: 0.7}} />
+            <div className="w-12 h-px" style={{background: 'linear-gradient(90deg, rgba(212,175,55,0.5), transparent)'}} />
+          </div>
+        </div>
+
+        {/* Right side - icon buttons + DM avatar */}
+        <div className="flex items-center shrink-0 ml-auto">
+          {/* Icon buttons */}
+          <div className="flex items-center gap-1 mr-3">
+            {([
+              {icon: Dice5, label: 'Würfeln', onClick: () => setD20TriggerKey(k => k+1)},
+              {icon: BookOpen, label: 'Regelwerk', onClick: () => setIsDmPanelOpen((o: boolean) => !o)},
+              {icon: ClipboardList, label: 'Log', onClick: () => setIsLogPanelOpen((o: boolean) => !o)},
+            ] as const).map(({icon: Icon, label, onClick}) => (
+              <button
+                key={label}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[0.65rem] font-bold font-cinzel uppercase tracking-wide text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                onClick={onClick}
+                type="button"
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+          {/* Vertical divider */}
+          <div className="w-px h-6 mx-2" style={{background: 'rgba(255,255,255,0.1)'}} />
+          {/* Account button + dropdown */}
+          <div className="relative mr-1" ref={accountRef}>
+            <button
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded transition-colors hover:bg-white/5"
+              onClick={() => setIsAccountOpen((o) => !o)}
+              style={{background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.2)'}}
+              type="button"
+            >
+              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[0.55rem] font-bold font-cinzel" style={{background: 'rgba(212,175,55,0.25)', color: '#d4af37'}}>
+                {username ? username[0].toUpperCase() : "?"}
+              </div>
+              <div className="text-left">
+                <p className="text-[0.55rem] font-cinzel uppercase tracking-wide leading-none" style={{color: 'rgba(212,175,55,0.7)'}}>Spieler</p>
+                <p className="text-[0.62rem] font-bold text-slate-100 leading-none mt-0.5 max-w-[120px] truncate">{username ?? "..."}</p>
+              </div>
+              <ChevronDown className="w-3 h-3 text-slate-500" />
+            </button>
+            {isAccountOpen ? (
+              <div className="absolute right-0 top-10 z-50 w-64 rounded-lg shadow-2xl" style={{background: 'rgba(8,8,8,0.98)', border: '1px solid rgba(212,175,55,0.2)', backdropFilter: 'blur(20px)'}}>
+                <div className="p-4 border-b" style={{borderColor: 'rgba(255,255,255,0.08)'}}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold font-cinzel shrink-0" style={{background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.3)', color: '#d4af37'}}>
+                      {username ? username[0].toUpperCase() : "?"}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-100 truncate">{username ?? "-"}</p>
+                      <p className="text-[0.6rem] font-cinzel uppercase tracking-wide mt-0.5" style={{color: 'rgba(212,175,55,0.6)'}}>
+                        Spieler #{userId ?? "..."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-2">
+                  <Link
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
+                    href="/campaigns"
+                    onClick={() => setIsAccountOpen(false)}
+                  >
+                    <ScrollText className="w-4 h-4" />
+                    Kampagnen & Speicherstände
+                  </Link>
                   <button
-                    aria-label="Würfelfenster schließen"
-                    className="grid size-7 place-items-center rounded-md border border-white/10 bg-white/10"
-                    onClick={() => setIsDicePanelOpen(false)}
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm transition-colors mt-1"
+                    onClick={logout}
+                    style={{color: '#fca5a5'}}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239,68,68,0.1)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     type="button"
                   >
-                    <X className="size-4" />
+                    <LogIn className="w-4 h-4 rotate-180" />
+                    Abmelden
                   </button>
                 </div>
-
-                <div className="grid grid-cols-4 gap-2">
-                  {diceTypes.map((item) => (
-                    <button
-                      className={`rounded-md border px-2 py-2 text-xs font-bold transition ${
-                        diceType === item
-                          ? "border-ember-400 bg-ember-500 text-ink-950"
-                          : "border-white/10 bg-white/[0.06] text-slate-100 hover:border-ember-400/70"
-                      }`}
-                      key={item}
-                      onClick={() => setDiceType(item)}
-                      type="button"
-                    >
-                      d{item}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  {(["normal", "advantage", "disadvantage"] as RollMode[]).map(
-                    (mode) => (
-                      <button
-                        className={`rounded-md border px-2 py-2 text-xs font-semibold transition ${
-                          rollMode === mode
-                            ? "border-ember-400 bg-ember-500 text-ink-950"
-                            : "border-white/10 bg-white/[0.06] text-slate-100 hover:border-ember-400/70"
-                        }`}
-                        disabled={diceType !== 20 && mode !== "normal"}
-                        key={mode}
-                        onClick={() => setRollMode(mode)}
-                        type="button"
-                      >
-                        {mode === "normal"
-                          ? "Normal"
-                          : mode === "advantage"
-                            ? "Vorteil"
-                            : "Nachteil"}
-                      </button>
-                    ),
-                  )}
-                </div>
-
-                <label className="mt-3 block">
-                  <span className="mb-1 block text-xs text-slate-400">
-                    Modifikator
-                  </span>
-                  <input
-                    className="h-10 w-full rounded-md border border-white/10 bg-white/[0.06] px-3 text-sm text-slate-100 outline-none"
-                    onChange={(event) =>
-                      setRollModifier(Number(event.target.value) || 0)
-                    }
-                    type="number"
-                    value={rollModifier}
-                  />
-                </label>
-
-                <button
-                  className="mt-3 h-10 w-full rounded-md border border-ember-400/50 bg-ember-500 text-sm font-bold text-ink-950 transition hover:bg-ember-400"
-                  onClick={rollManualDice}
-                  type="button"
-                >
-                  Würfeln
-                </button>
-
-                {rollResult ? (
-                  <div className="mt-3 rounded-md border border-white/10 bg-black/35 p-3">
-                    <p className="text-xs uppercase tracking-[0.16em] text-ember-300">
-                      Letzter Wurf
-                    </p>
-                    <p className="mt-1 text-2xl font-bold">
-                      {rollResult?.total}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-400">
-                      {rollResult?.label}: {rollResult?.rolls.join(" / ")}
-                      {" + "}
-                      Mod {rollResult?.modifier}
-                    </p>
-                  </div>
-                ) : null}
               </div>
             ) : null}
           </div>
-        </header>
-
-        <div className="hidden rounded-md border border-white/10 bg-white/[0.06] p-2">
-          <BookOpen className="mb-1 size-4 text-ember-400" />
-          <p className="text-xs text-slate-400">Aktuelle Szene</p>
-          <p className="text-sm font-semibold">
-            {currentScene.chapter} · {currentScene.title}
-          </p>
+          {/* DM Avatar */}
+          <button className="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/5 transition-colors" onClick={() => setIsDmPanelOpen((o) => !o)} type="button">
+            <div className="relative">
+              <div className="w-8 h-8 rounded-full overflow-hidden border-2" style={{borderColor: 'rgba(212,175,55,0.4)'}}>
+                <div className="w-full h-full bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center">
+                  <Bot className="w-4 h-4 text-slate-300" />
+                </div>
+              </div>
+              <div className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-green-400 border border-black" />
+            </div>
+            <div className="text-left hidden sm:block">
+              <p className="text-[0.65rem] font-bold font-cinzel text-white leading-none">Spielmeister</p>
+              <p className="text-[0.58rem] font-cinzel text-slate-400 leading-none mt-0.5 tracking-wider">DM</p>
+            </div>
+            <ChevronDown className="w-3 h-3 text-slate-500" />
+          </button>
+          {isCombatScene ? (
+            <Link className="ml-2 flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[0.68rem] font-bold border border-red-400/40 bg-red-500/15 text-red-100 hover:border-red-300 transition-colors" href="/combat" onClick={prepareCombatRouteHandoff}>
+              <Swords className="w-3 h-3" />
+              Combat
+            </Link>
+          ) : null}
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(16rem,19rem)_minmax(0,1fr)_minmax(12rem,15rem)] xl:grid-cols-[20rem_minmax(0,1fr)_15rem]">
-          <aside className="relative z-30 max-h-[32rem] min-h-0 overflow-y-auto rounded-md border border-white/10 bg-ink-950/70 p-3 lg:max-h-none">
-            <div className="mb-3 flex w-full items-center justify-between rounded-md border border-white/10 bg-white/[0.06] px-3 py-2 text-left">
-              <span>
-                <span className="block text-xs uppercase tracking-[0.16em] text-ember-300">
-                  Charakterbogen
-                </span>
-                <span className="block text-sm font-bold">
-                  {activeCharacter?.name ?? "Noch kein Charakter"}
-                </span>
-              </span>
+        {/* Log dropdown */}
+        {isLogPanelOpen ? (
+          <div className="absolute right-4 top-16 z-50 max-h-96 w-96 overflow-y-auto rounded-lg border border-white/10 p-3 shadow-2xl" style={{background: 'rgba(5,5,5,0.98)', backdropFilter: 'blur(20px)'}}>
+            <p className="mb-3 text-sm font-bold text-white">Game-Log</p>
+            <div className="space-y-2">
+              {gameLog.map((entry) => (
+                <article className="rounded-md border border-white/[0.08] bg-white/[0.03] p-2 text-sm" key={entry.id}>
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-bold text-slate-200">{entry.title}</p>
+                    {entry.total !== undefined ? (
+                      <span className="rounded px-2 py-0.5 text-xs font-black text-black shrink-0" style={{background: '#d4af37'}}>{entry.total}</span>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-400">{entry.detail}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </header>
+
+      {/* MAIN 3-COLUMN */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[260px_1fr_320px]">
+          {/* LEFT SIDEBAR */}
+          <aside className="hidden lg:flex flex-col min-h-0 overflow-y-auto border-r border-white/[0.07]" style={{background: 'rgba(8,8,8,0.7)', backdropFilter: 'blur(8px)'}}>
+            {/* Character name header */}
+            <div className="px-4 pt-4 pb-3 border-b border-white/[0.07] shrink-0">
+              <p className="text-sm font-bold text-white font-cinzel tracking-wide">{activeCharacter?.name ?? 'Kein Charakter'}</p>
+              {activeCharacter ? (
+                <p className="text-[0.6rem] text-slate-500 mt-0.5 font-cinzel uppercase tracking-[0.14em]">Stufe {activeCharacter.level} {activeCharacter.className} ({activeCharacter.subclassName})</p>
+              ) : null}
             </div>
 
-            {activeCharacter &&
-            activeNpc &&
-            activeRuntimeStats &&
-            companionRuntimeStats ? (
-              <div className="mb-3 grid grid-cols-2 gap-2">
-                <article
-                  className={`overflow-hidden rounded-md border border-ember-400/35 bg-white/[0.05] shadow-glow ${
-                    isSheetExpanded ? "col-span-2" : ""
-                  }`}
-                >
-                  <div className="flex h-32 items-end justify-center bg-gradient-to-b from-white/10 to-black/40">
-                    <Image
-                      alt={`${activeCharacter.name} Portrait`}
-                      className="max-h-32 object-contain drop-shadow-2xl"
-                      height={190}
-                      src={activeCharacter.modelImageUrl}
-                      width={150}
+            {activeCharacter && activeNpc && activeRuntimeStats && companionRuntimeStats ? (
+              <>
+                {/* Portrait */}
+                <div className="px-4 py-3 border-b border-white/[0.07] shrink-0">
+                  <div className="relative rounded-lg overflow-hidden" style={{border: '1px solid rgba(212,175,55,0.5)', boxShadow: '0 0 25px rgba(212,175,55,0.2), inset 0 0 30px rgba(0,0,0,0.5)'}}>
+                    <div className="h-48 bg-gradient-to-b from-white/5 to-black/80 flex items-end justify-center relative">
+                      {/* Atmospheric overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/60" />
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        alt={`${activeCharacter.name} Portrait`}
+                        className="relative z-10 max-h-48 w-auto object-contain drop-shadow-2xl"
+                        src={activeCharacter.modelImageUrl}
+                        style={{filter: 'drop-shadow(0 0 12px rgba(212,175,55,0.3))'}}
+                      />
+                    </div>
+                    {/* Gold corner accents */}
+                    <div className="absolute top-1 left-1 w-3 h-3 border-t border-l" style={{borderColor: 'rgba(212,175,55,0.6)'}} />
+                    <div className="absolute top-1 right-1 w-3 h-3 border-t border-r" style={{borderColor: 'rgba(212,175,55,0.6)'}} />
+                    <div className="absolute bottom-1 left-1 w-3 h-3 border-b border-l" style={{borderColor: 'rgba(212,175,55,0.6)'}} />
+                    <div className="absolute bottom-1 right-1 w-3 h-3 border-b border-r" style={{borderColor: 'rgba(212,175,55,0.6)'}} />
+                  </div>
+                </div>
+
+                {/* HP / AC / SP bars */}
+                <div className="px-4 py-3 space-y-2.5 border-b border-white/[0.07] shrink-0">
+                  {/* HP */}
+                  <div className="flex items-center gap-2.5">
+                    <HeartPulse className="w-3.5 h-3.5 shrink-0" style={{color: '#ef4444'}} />
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[0.6rem] font-bold uppercase tracking-wider text-slate-500 font-cinzel">TP</span>
+                        <span className="text-[0.68rem] font-bold text-white">{activeRuntimeStats.currentHp} / {activeRuntimeStats.maxHp}</span>
+                      </div>
+                      <div className="h-1.5 rounded-full overflow-hidden bg-black/50">
+                        <div className="h-full rounded-full transition-all duration-500" style={{width: `${Math.max(0, Math.min(100, (activeRuntimeStats.currentHp / activeRuntimeStats.maxHp) * 100))}%`, background: '#ef4444', boxShadow: '0 0 6px rgba(239,68,68,0.5)'}} />
+                      </div>
+                    </div>
+                  </div>
+                  {/* AC */}
+                  <div className="flex items-center gap-2.5">
+                    <ShieldCheck className="w-3.5 h-3.5 shrink-0" style={{color: '#3b82f6'}} />
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[0.6rem] font-bold uppercase tracking-wider text-slate-500 font-cinzel">RK</span>
+                        <span className="text-[0.68rem] font-bold text-white">{activeRuntimeStats.ac}</span>
+                      </div>
+                      <div className="h-1.5 rounded-full overflow-hidden bg-black/50">
+                        <div className="h-full rounded-full" style={{width: `${Math.max(0, Math.min(100, (activeRuntimeStats.ac / 20) * 100))}%`, background: '#3b82f6', boxShadow: '0 0 6px rgba(59,130,246,0.5)'}} />
+                      </div>
+                    </div>
+                  </div>
+                  {/* SP */}
+                  <div className="flex items-center gap-2.5">
+                    <Swords className="w-3.5 h-3.5 shrink-0" style={{color: '#a855f7'}} />
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[0.6rem] font-bold uppercase tracking-wider text-slate-500 font-cinzel">SP</span>
+                        <span className="text-[0.68rem] font-bold text-white">{activeCharacter.stats.speed} / {activeCharacter.stats.speed}</span>
+                      </div>
+                      <div className="h-1.5 rounded-full overflow-hidden bg-black/50">
+                        <div className="h-full rounded-full" style={{width: '100%', background: '#a855f7', boxShadow: '0 0 6px rgba(168,85,247,0.5)'}} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Skills */}
+                <div className="px-3 py-3 flex-1 overflow-y-auto">
+                  <div className="flex items-center gap-1.5 mb-2.5">
+                    <div className="flex-1 h-px" style={{background: 'rgba(212,175,55,0.2)'}} />
+                    <p className="text-[0.62rem] font-bold uppercase tracking-[0.28em] text-slate-300 font-cinzel">Fertigkeiten</p>
+                    <div className="flex-1 h-px" style={{background: 'rgba(212,175,55,0.2)'}} />
+                  </div>
+                  {activeSheet ? (
+                    <div className="grid grid-cols-2 gap-1">
+                      {activeSheet.skills.map(([label, value]) => {
+                        const skillMeta: Record<string, {attr: string; Icon: React.ElementType}> = {
+                          Akrobatik:         {attr: 'GEW', Icon: Waves},
+                          Heimlichkeit:      {attr: 'GEW', Icon: Wind},
+                          Fingerfertigkeit:  {attr: 'GEW', Icon: HandMetal},
+                          Athletik:          {attr: 'STÄ', Icon: Zap},
+                          Wahrnehmung:       {attr: 'WEI', Icon: Scan},
+                          Überzeugen:        {attr: 'CHA', Icon: Drama},
+                          Einschüchtern:     {attr: 'CHA', Icon: Skull},
+                          Überleben:         {attr: 'WEI', Icon: Flame},
+                          Motivation:        {attr: 'WEI', Icon: Sparkles},
+                          'Arkane Kunde':    {attr: 'INT', Icon: Star},
+                          Acrobatics:        {attr: 'GEW', Icon: Waves},
+                          'Animal Handling': {attr: 'WEI', Icon: Leaf},
+                          Arcana:            {attr: 'INT', Icon: Sparkles},
+                          Athletics:         {attr: 'STA', Icon: Zap},
+                          Deception:         {attr: 'CHA', Icon: Drama},
+                          History:           {attr: 'INT', Icon: ScrollText},
+                          Insight:           {attr: 'WEI', Icon: Eye},
+                          Intimidation:      {attr: 'CHA', Icon: Skull},
+                          Investigation:     {attr: 'INT', Icon: Search},
+                          Medicine:          {attr: 'WEI', Icon: FlaskConical},
+                          Nature:            {attr: 'INT', Icon: Trees},
+                          Perception:        {attr: 'WEI', Icon: Scan},
+                          Performance:       {attr: 'CHA', Icon: Music},
+                          Persuasion:        {attr: 'CHA', Icon: Star},
+                          Religion:          {attr: 'INT', Icon: Snowflake},
+                          'Sleight of Hand': {attr: 'GEW', Icon: HandMetal},
+                          Stealth:           {attr: 'GEW', Icon: Wind},
+                          Survival:          {attr: 'WEI', Icon: Flame},
+                        };
+                        const meta = skillMeta[label] ?? {attr: 'GEW', Icon: Feather};
+                        const { attr } = meta;
+                        const SkillIcon = meta.Icon as React.ComponentType<{className?: string; style?: React.CSSProperties}>;
+                        const isPending = pendingSkillNames.has(label);
+                        return (
+                          <button
+                            className="min-w-0 rounded-md px-2 py-2 text-left text-[0.6rem] transition-all hover:bg-white/10 flex items-center gap-2"
+                            key={label}
+                            onClick={() => rollFormula(`${activeCharacter.name} ${label}`, `1d20${value}`, { skill: label })}
+                            style={{background: isPending ? 'rgba(212,175,55,0.12)' : 'rgba(255,255,255,0.03)', border: isPending ? '1px solid rgba(212,175,55,0.5)' : '1px solid rgba(255,255,255,0.07)'}}
+                            type="button"
+                          >
+                            <div className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center" style={{background: isPending ? 'rgba(212,175,55,0.2)' : 'rgba(255,255,255,0.07)'}}>
+                              <SkillIcon className="w-3 h-3" style={{color: isPending ? '#d4af37' : '#94a3b8'}} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className="block truncate text-slate-200 text-[0.65rem] font-semibold leading-tight">{label}</span>
+                              <span className="text-[0.58rem] text-slate-400 leading-tight font-cinzel tracking-wide uppercase">{attr}</span>
+                            </div>
+                            <span className="font-black text-[0.72rem] shrink-0" style={{color: isPending ? '#d4af37' : '#e2e8f0'}}>{value}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Details + expanded sheet */}
+                <div className="px-4 py-3 border-t border-white/[0.07] shrink-0">
+                  <button
+                    className="w-full rounded py-2 text-[0.65rem] font-semibold text-slate-500 border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05] transition-colors flex items-center justify-center gap-1.5 font-cinzel uppercase tracking-wider"
+                    onClick={() => setIsSheetExpanded((e) => !e)}
+                    type="button"
+                  >
+                    Details anzeigen <ChevronDown className={`w-3 h-3 transition ${isSheetExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {isSheetExpanded && activeSheet ? (
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <p className="text-[0.62rem] uppercase tracking-wider text-slate-400 mb-1.5 font-cinzel tracking-[0.2em]">Aktionen</p>
+                        <div className="space-y-1.5">
+                          {activeSheet.actions.map((action) => (
+                            <div className="rounded border border-white/[0.08] bg-white/[0.03] p-2" key={action.name}>
+                              <p className="text-xs font-bold text-white">{action.name}</p>
+                              <p className="text-[0.62rem] text-slate-400 mt-0.5">{action.note}</p>
+                              <div className="mt-1.5 grid grid-cols-2 gap-1">
+                                <button
+                                  className="rounded border border-white/[0.08] bg-white/[0.05] px-1 py-1.5 text-[0.6rem] font-bold hover:bg-white/10 transition-colors text-slate-200"
+                                  onClick={() => {
+                                    if (isCombatScene && combatAttackFlowState.step === 'awaitAttackRoll' && combatAttackFlowState.actionName === action.name && selectedCombatTarget) {
+                                      void rollCombatAttack();
+                                      return;
+                                    }
+                                    rollFormula(`${action.name} Angriff`, `1d20+${action.attack}`);
+                                  }}
+                                  type="button"
+                                >
+                                  Hit +{action.attack}
+                                </button>
+                                <button
+                                  className="rounded border border-white/[0.08] bg-white/[0.05] px-1 py-1.5 text-[0.6rem] font-bold hover:bg-white/10 transition-colors text-slate-200"
+                                  onClick={() => rollFormula(`${action.name} Schaden`, action.damage)}
+                                  type="button"
+                                >
+                                  {action.damage}
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[0.62rem] uppercase tracking-wider text-slate-400 mb-1.5 font-cinzel tracking-[0.2em]">Inventory</p>
+                        {inventoryItems.length > 0 ? (
+                          <div className="space-y-1">
+                            {inventoryItems.map((item) => (
+                              <div className="rounded border border-white/[0.08] bg-white/[0.03] p-2" key={item.item_id}>
+                                <p className="text-xs font-bold text-white">{item.name}</p>
+                                <p className="text-[0.62rem] text-slate-400">Menge {item.quantity}{item.equipped ? ' · ausgerüstet' : ''}</p>
+                                <div className="mt-1 grid grid-cols-2 gap-1">
+                                  {(item.actions ?? []).slice(0, 4).map((action) => (
+                                    <button className="rounded border border-white/[0.08] bg-white/[0.05] px-1 py-1 text-[0.58rem] font-semibold hover:bg-white/10 transition-colors text-slate-300" key={action} onClick={() => handleInventoryAction(item, action)} type="button">
+                                      {action}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[0.62rem] text-slate-400">Wird geladen...</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Companion mini */}
+                <div className="px-4 py-2.5 border-t border-white/[0.07] shrink-0">
+                  <div className="flex items-center gap-2.5 rounded-lg px-2 py-2" style={{background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)'}}>
+                    <div className="w-8 h-8 rounded overflow-hidden shrink-0 bg-black/40 flex items-end justify-center">
+                      <Image alt={activeNpc.name} className="object-contain" height={40} src={activeNpc.modelImageUrl} style={{width: 'auto', maxHeight: '2rem'}} width={32} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[0.65rem] font-bold text-slate-300 truncate font-cinzel">{activeNpc.name}</p>
+                      <p className="text-[0.62rem] text-slate-400 font-cinzel uppercase tracking-wider">Begleitung</p>
+                    </div>
+                    <div className="flex gap-1 shrink-0 text-[0.58rem] font-bold">
+                      <span className="rounded px-1 py-0.5 bg-red-500/15 text-red-200">{companionRuntimeStats.currentHp}</span>
+                      <span className="rounded px-1 py-0.5 bg-white/5 text-slate-300">AC{companionRuntimeStats.ac}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bottom chat bar */}
+                <div className="flex items-center gap-2 px-4 py-3 border-t border-white/[0.07] shrink-0">
+                  <button className="text-slate-600 hover:text-slate-400 transition-colors" onClick={() => setIsDmPanelOpen((o) => !o)} type="button">
+                    <MessageSquare className="w-4 h-4" />
+                  </button>
+                  <button className="text-slate-600 hover:text-slate-400 transition-colors" type="button">
+                    <UserPlus className="w-4 h-4" />
+                  </button>
+                  <button className="text-slate-600 hover:text-slate-400 transition-colors" type="button">
+                    <Music className="w-4 h-4" />
+                  </button>
+                  <div className="flex-1 relative">
+                    <input
+                      className="w-full h-7 rounded border border-white/[0.08] bg-white/[0.04] px-2.5 text-xs text-white placeholder:text-slate-700 outline-none focus:border-white/15"
+                      onChange={(e) => setDmInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { void sendDmMessage(); }}}
+                      placeholder="Nachricht eingeben..."
+                      value={dmInput}
                     />
                   </div>
-                  <div className="flex items-start justify-between gap-2 border-t border-white/10 p-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-bold">
-                        {activeCharacter.name}
-                      </p>
-                      <p className="text-[0.65rem] uppercase tracking-[0.12em] text-ember-300">
-                        Hauptcharakter
-                      </p>
-                    </div>
-                    <button
-                      aria-label={`${activeCharacter.name} Sheet umschalten`}
-                      className="grid size-7 shrink-0 place-items-center rounded-md border border-white/10 bg-white/[0.06] text-slate-200 transition hover:border-ember-400/70"
-                      onClick={() =>
-                        setIsSheetExpanded((isExpanded) => !isExpanded)
-                      }
-                      type="button"
-                    >
-                      <ChevronDown
-                        className={`size-4 transition ${
-                          isSheetExpanded ? "rotate-180" : ""
-                        }`}
-                      />
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1 border-t border-white/10 p-1.5 text-center">
-                    <span className="rounded bg-red-500/15 px-1 py-1 text-[0.62rem] font-bold text-red-100">
-                      HP {activeRuntimeStats.currentHp}/{activeRuntimeStats.maxHp}
-                    </span>
-                    <span className="rounded bg-white/[0.06] px-1 py-1 text-[0.62rem] font-bold text-slate-100">
-                      AC {activeRuntimeStats.ac}
-                    </span>
-                    <span className="rounded bg-white/[0.06] px-1 py-1 text-[0.62rem] font-bold text-slate-100">
-                      SP {activeCharacter.stats.speed}
-                    </span>
-                  </div>
+                  <button className="flex items-center justify-center w-7 h-7 rounded text-black shrink-0 transition-opacity hover:opacity-90" onClick={() => void sendDmMessage()} style={{background: '#d4af37'}} type="button">
+                    <Send className="w-3 h-3" />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-center flex-1 p-6 text-center">
+                <p className="text-slate-400 text-sm">Charakter wird ausgewählt...</p>
+              </div>
+            )}
+
+            {/* Legacy content - hidden */}
+            <div className="hidden">
                   {isSheetExpanded && activeSheet ? (
                     <div className="space-y-2 border-t border-white/10 p-2">
                       <button
                         className="w-full rounded-md border border-ember-400/30 bg-ember-500/10 px-2 py-2 text-left text-xs transition hover:border-ember-400"
                         onClick={() =>
                           rollFormula(
-                            `${activeCharacter.name} Initiative`,
-                            `1d20+${activeCharacter.stats.initiative}`,
-                            { initiativeCharacterId: activeCharacter.id },
+                            `${activeCharacter!.name} Initiative`,
+                            `1d20+${activeCharacter!.stats.initiative}`,
+                            { initiativeCharacterId: activeCharacter!.id },
                           )
                         }
                         type="button"
                       >
-                        Initiative +{activeCharacter.stats.initiative}
+                        Initiative +{activeCharacter!.stats.initiative}
                       </button>
                       <div className="space-y-1">
                         <p className="text-[0.62rem] uppercase tracking-[0.14em] text-slate-400">
                           Skills
                         </p>
                         <div className="grid grid-cols-2 gap-1">
-                          {activeSheet.skills.map(([label, value]) => (
+                          {activeSheet!.skills.map(([label, value]) => (
                             <button
                               className={`min-w-0 rounded-md border px-2 py-1.5 text-left text-[0.68rem] transition hover:border-ember-400/70 ${
                                 pendingSkillNames.has(label)
@@ -2723,7 +2925,7 @@ export default function Home() {
                               key={label}
                               onClick={() =>
                                 rollFormula(
-                                  `${activeCharacter.name} ${label}`,
+                                  `${activeCharacter!.name} ${label}`,
                                   `1d20${value}`,
                                   { skill: label },
                                 )
@@ -2745,7 +2947,7 @@ export default function Home() {
                           Aktionen
                         </p>
                         <div className="grid gap-1">
-                        {activeSheet.actions.map((action) => (
+                        {activeSheet!.actions.map((action) => (
                           <div
                             className="rounded-md border border-white/10 bg-white/[0.05] p-2"
                             key={action.name}
@@ -2841,31 +3043,31 @@ export default function Home() {
                       </div>
                     </div>
                   ) : null}
+                <div><article>
                 </article>
-
-                <article
+                {activeNpc ? <article
                   className={`overflow-hidden rounded-md border border-white/10 bg-white/[0.05] ${
                     isCompanionExpanded ? "col-span-2" : ""
                   }`}
                 >
                   <div className="flex h-32 items-end justify-center bg-gradient-to-b from-white/10 to-black/40">
                     <Image
-                      alt={`${activeNpc.name} Portrait`}
+                      alt={`${activeNpc!.name} Portrait`}
                       className="max-h-32 object-contain drop-shadow-2xl"
                       height={190}
-                      src={activeNpc.modelImageUrl}
+                      src={activeNpc!.modelImageUrl}
                       width={150}
                     />
                   </div>
                   <div className="flex items-start justify-between gap-2 border-t border-white/10 p-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-bold">{activeNpc.name}</p>
+                      <p className="truncate text-sm font-bold">{activeNpc!.name}</p>
                       <p className="text-[0.65rem] uppercase tracking-[0.12em] text-slate-400">
                         Begleitung
                       </p>
                     </div>
                     <button
-                      aria-label={`${activeNpc.name} Sheet umschalten`}
+                      aria-label={`${activeNpc!.name} Sheet umschalten`}
                       className="grid size-7 shrink-0 place-items-center rounded-md border border-white/10 bg-white/[0.06] text-slate-200 transition hover:border-ember-400/70"
                       onClick={() =>
                         setIsCompanionExpanded((isExpanded) => !isExpanded)
@@ -2881,13 +3083,13 @@ export default function Home() {
                   </div>
                   <div className="grid grid-cols-3 gap-1 border-t border-white/10 p-1.5 text-center">
                     <span className="rounded bg-red-500/15 px-1 py-1 text-[0.62rem] font-bold text-red-100">
-                      HP {companionRuntimeStats.currentHp}/{companionRuntimeStats.maxHp}
+                      HP {companionRuntimeStats!.currentHp}/{companionRuntimeStats!.maxHp}
                     </span>
                     <span className="rounded bg-white/[0.06] px-1 py-1 text-[0.62rem] font-bold text-slate-100">
-                      AC {companionRuntimeStats.ac}
+                      AC {companionRuntimeStats!.ac}
                     </span>
                     <span className="rounded bg-white/[0.06] px-1 py-1 text-[0.62rem] font-bold text-slate-100">
-                      SP {activeNpc.stats.speed}
+                      SP {activeNpc!.stats.speed}
                     </span>
                   </div>
                   {isCompanionExpanded && companionSheet ? (
@@ -2896,20 +3098,20 @@ export default function Home() {
                         className="w-full rounded-md border border-ember-400/30 bg-ember-500/10 px-2 py-2 text-left text-xs transition hover:border-ember-400"
                         onClick={() =>
                           rollFormula(
-                            `${activeNpc.name} Initiative`,
-                            `1d20+${activeNpc.stats.initiative}`,
-                            { initiativeCharacterId: activeNpc.id },
+                            `${activeNpc!.name} Initiative`,
+                            `1d20+${activeNpc!.stats.initiative}`,
+                            { initiativeCharacterId: activeNpc!.id },
                           )
                         }
                         type="button"
                       >
-                        Initiative +{activeNpc.stats.initiative}
+                        Initiative +{activeNpc!.stats.initiative}
                       </button>
                       <div className="space-y-1">
                         <p className="text-[0.62rem] uppercase tracking-[0.14em] text-slate-400">
                           Aktionen
                         </p>
-                        {companionSheet.actions.map((action) => (
+                        {companionSheet!.actions.map((action) => (
                           <div
                             className="rounded-md border border-white/10 bg-white/[0.05] p-2"
                             key={action.name}
@@ -2934,7 +3136,7 @@ export default function Home() {
                                   }
 
                                   rollFormula(
-                                    `${activeNpc.name} ${action.name} Angriff`,
+                                    `${activeNpc!.name} ${action.name} Angriff`,
                                     `1d20+${action.attack}`,
                                   );
                                 }}
@@ -2949,7 +3151,7 @@ export default function Home() {
                                 className="rounded-md border border-white/10 bg-white/[0.06] px-1 py-1.5 text-[0.65rem] transition hover:border-ember-400/70"
                                 onClick={() =>
                                   rollFormula(
-                                    `${activeNpc.name} ${action.name} Schaden`,
+                                    `${activeNpc!.name} ${action.name} Schaden`,
                                     action.damage,
                                   )
                                 }
@@ -2966,27 +3168,27 @@ export default function Home() {
                       </div>
                     </div>
                   ) : null}
-                </article>
+                </article> : null}
               </div>
-            ) : null}
+            </div>{/* close legacy hidden div */}
 
-            {activeCharacter && activeSheet && isSheetExpanded ? (
+            {false ? (
               <div className="hidden space-y-3">
                 <div className="hidden overflow-hidden rounded-md border border-white/10 bg-black/35">
                   <div className="flex h-40 items-end justify-center bg-gradient-to-b from-white/5 to-transparent">
                     <Image
-                      alt={`${activeCharacter.name} Charakterbild`}
+                      alt={`${activeCharacter!.name} Charakterbild`}
                       className="max-h-40 object-contain drop-shadow-2xl"
                       height={220}
-                      src={activeCharacter.modelImageUrl}
+                      src={activeCharacter!.modelImageUrl}
                       width={180}
                     />
                   </div>
                   <div className="border-t border-white/10 p-2">
-                    <p className="text-sm font-bold">{activeCharacter.name}</p>
+                    <p className="text-sm font-bold">{activeCharacter!.name}</p>
                     <p className="text-xs text-slate-400">
-                      Level {activeCharacter.level} {activeCharacter.className} ·{" "}
-                      {activeCharacter.subclassName}
+                      Level {activeCharacter!.level} {activeCharacter!.className} ·{" "}
+                      {activeCharacter!.subclassName}
                     </p>
                   </div>
                 </div>
@@ -3011,7 +3213,7 @@ export default function Home() {
                     <Swords className="mb-1 size-4 text-ember-400" />
                     <p className="text-xs text-slate-400">Speed</p>
                     <p className="text-sm font-bold">
-                      {activeCharacter.stats.speed} ft.
+                      {activeCharacter!.stats.speed} ft.
                     </p>
                   </div>
                 </div>
@@ -3020,9 +3222,9 @@ export default function Home() {
                   className="w-full rounded-md border border-ember-400/30 bg-ember-500/10 px-3 py-2 text-left transition hover:border-ember-400"
                   onClick={() =>
                     rollFormula(
-                      `${activeCharacter.name} Initiative`,
-                      `1d20+${activeCharacter.stats.initiative}`,
-                      { initiativeCharacterId: activeCharacter.id },
+                      `${activeCharacter!.name} Initiative`,
+                      `1d20+${activeCharacter!.stats.initiative}`,
+                      { initiativeCharacterId: activeCharacter!.id },
                     )
                   }
                   type="button"
@@ -3031,7 +3233,7 @@ export default function Home() {
                     Initiative würfeln
                   </span>
                   <span className="text-sm font-bold">
-                    +{activeCharacter.stats.initiative}
+                    +{activeCharacter!.stats.initiative}
                   </span>
                 </button>
 
@@ -3040,13 +3242,13 @@ export default function Home() {
                     Saving Throws
                   </p>
                   <div className="grid grid-cols-2 gap-2">
-                    {activeSheet.saves.map(([label, value]) => (
+                    {activeSheet!.saves.map(([label, value]) => (
                       <button
                         className="rounded-md border border-white/10 bg-white/[0.06] px-2 py-2 text-left text-xs transition hover:border-ember-400/70"
                         key={label}
                         onClick={() =>
                           rollFormula(
-                            `${activeCharacter.name} ${label}`,
+                            `${activeCharacter!.name} ${label}`,
                             `1d20${value}`,
                             { skill: label },
                           )
@@ -3077,7 +3279,7 @@ export default function Home() {
                   </button>
                   {isSkillsExpanded ? (
                   <div className="space-y-1">
-                    {activeSheet.skills.map(([label, value]) => (
+                    {activeSheet!.skills.map(([label, value]) => (
                       <button
                         className={`w-full rounded-md border px-2 py-2 text-left text-xs transition hover:border-ember-400/70 ${
                           pendingSkillNames.has(label)
@@ -3087,7 +3289,7 @@ export default function Home() {
                         key={label}
                         onClick={() =>
                           rollFormula(
-                            `${activeCharacter.name} ${label}`,
+                            `${activeCharacter!.name} ${label}`,
                             `1d20${value}`,
                             { skill: label },
                           )
@@ -3136,7 +3338,7 @@ export default function Home() {
                         {combatStatus}
                       </span>
                     </button>
-                    {activeSheet.actions.map((action) => (
+                    {activeSheet!.actions.map((action) => (
                       <div
                         className="rounded-md border border-white/10 bg-white/[0.05] p-2"
                         key={action.name}
@@ -3234,7 +3436,7 @@ export default function Home() {
               </div>
             ) : null}
 
-            {activeNpc && companionSheet && isCompanionExpanded ? (
+            {false && activeNpc && companionSheet && isCompanionExpanded ? (
               <div className="hidden mt-3 space-y-2 rounded-md border border-white/10 bg-white/[0.03] p-2">
                 <button
                   className="flex w-full items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-2 py-2 text-left transition hover:border-ember-400/60"
@@ -3245,10 +3447,10 @@ export default function Home() {
                 >
                   <div className="grid size-12 shrink-0 place-items-end overflow-hidden rounded-md border border-white/10 bg-black/35">
                     <Image
-                      alt={`${activeNpc.name} Begleiterbild`}
+                      alt={`${activeNpc!.name} Begleiterbild`}
                       className="max-h-12 object-contain drop-shadow-xl"
                       height={72}
-                      src={activeNpc.modelImageUrl}
+                      src={activeNpc!.modelImageUrl}
                       width={56}
                     />
                   </div>
@@ -3256,10 +3458,10 @@ export default function Home() {
                     <p className="text-xs uppercase tracking-[0.16em] text-ember-300">
                       NPC-Begleitung
                     </p>
-                    <p className="truncate text-sm font-bold">{activeNpc.name}</p>
+                    <p className="truncate text-sm font-bold">{activeNpc!.name}</p>
                     <p className="line-clamp-2 text-xs text-slate-400">
-                      Level {activeNpc.level} {activeNpc.className} ·{" "}
-                      {activeNpc.subclassName}
+                      Level {activeNpc!.level} {activeNpc!.className} ·{" "}
+                      {activeNpc!.subclassName}
                     </p>
                   </div>
                   <div className="grid shrink-0 grid-cols-3 gap-1 text-center text-[0.65rem] font-bold text-slate-100">
@@ -3273,7 +3475,7 @@ export default function Home() {
                     </span>
                     <span className="rounded border border-white/10 bg-white/[0.06] px-1.5 py-1">
                       <span className="block text-[0.55rem] font-semibold text-slate-400">SPD</span>
-                      {activeNpc.stats.speed}
+                      {activeNpc!.stats.speed}
                     </span>
                   </div>
                   <div className="shrink-0 text-slate-300">
@@ -3290,18 +3492,18 @@ export default function Home() {
                     <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] overflow-hidden rounded-md border border-white/10 bg-black/35">
                       <div className="flex h-24 items-end justify-center bg-gradient-to-b from-white/5 to-transparent">
                         <Image
-                          alt={`${activeNpc.name} Begleiterbild`}
+                          alt={`${activeNpc!.name} Begleiterbild`}
                           className="max-h-24 object-contain drop-shadow-2xl"
                           height={180}
-                          src={activeNpc.modelImageUrl}
+                          src={activeNpc!.modelImageUrl}
                           width={140}
                         />
                       </div>
                       <div className="border-l border-white/10 p-2">
-                        <p className="text-sm font-bold">{activeNpc.name}</p>
+                        <p className="text-sm font-bold">{activeNpc!.name}</p>
                         <p className="text-xs text-slate-400">
-                          Level {activeNpc.level} {activeNpc.className} ·{" "}
-                          {activeNpc.subclassName}
+                          Level {activeNpc!.level} {activeNpc!.className} ·{" "}
+                          {activeNpc!.subclassName}
                         </p>
                       </div>
                     </div>
@@ -3325,7 +3527,7 @@ export default function Home() {
                           <Swords className="mb-1 size-4 text-ember-400" />
                           <p className="text-xs text-slate-400">Speed</p>
                           <p className="whitespace-nowrap text-sm font-bold">
-                            {activeNpc.stats.speed} ft.
+                            {activeNpc!.stats.speed} ft.
                           </p>
                         </div>
                     </div>
@@ -3334,9 +3536,9 @@ export default function Home() {
                       className="w-full rounded-md border border-ember-400/30 bg-ember-500/10 px-3 py-2 text-left transition hover:border-ember-400"
                       onClick={() =>
                         rollFormula(
-                          `${activeNpc.name} Initiative`,
-                          `1d20+${activeNpc.stats.initiative}`,
-                          { initiativeCharacterId: activeNpc.id },
+                          `${activeNpc!.name} Initiative`,
+                          `1d20+${activeNpc!.stats.initiative}`,
+                          { initiativeCharacterId: activeNpc!.id },
                         )
                       }
                       type="button"
@@ -3345,7 +3547,7 @@ export default function Home() {
                         Initiative würfeln
                       </span>
                       <span className="text-sm font-bold">
-                        +{activeNpc.stats.initiative}
+                        +{activeNpc!.stats.initiative}
                       </span>
                     </button>
 
@@ -3354,7 +3556,7 @@ export default function Home() {
                         Aktionen
                       </p>
                       <div className="space-y-2">
-                        {companionSheet.actions.map((action) => (
+                        {companionSheet!.actions.map((action) => (
                           <div
                             className="rounded-md border border-white/10 bg-white/[0.05] p-2"
                             key={action.name}
@@ -3368,7 +3570,7 @@ export default function Home() {
                                 className="rounded-md border border-white/10 bg-white/[0.06] px-2 py-2 text-xs transition hover:border-ember-400/70"
                                 onClick={() =>
                                   rollFormula(
-                                    `${activeNpc.name} ${action.name} Angriff`,
+                                    `${activeNpc!.name} ${action.name} Angriff`,
                                     `1d20+${action.attack}`,
                                   )
                                 }
@@ -3380,7 +3582,7 @@ export default function Home() {
                                 className="rounded-md border border-white/10 bg-white/[0.06] px-2 py-2 text-xs transition hover:border-ember-400/70"
                                 onClick={() =>
                                   rollFormula(
-                                    `${activeNpc.name} ${action.name} Schaden`,
+                                    `${activeNpc!.name} ${action.name} Schaden`,
                                     action.damage,
                                   )
                                 }
@@ -3505,23 +3707,49 @@ export default function Home() {
             ) : null}
           </aside>
 
-          <div className="flex min-h-0 flex-col gap-3">
-            <div className="rounded-md border border-white/10 bg-white/[0.06] p-2">
-              <BookOpen className="mb-1 size-4 text-ember-400" />
-              <p className="text-xs text-slate-400">Aktuelle Szene</p>
-              <p className="text-sm font-semibold">
-                {currentScene.chapter} · {currentScene.title}
-              </p>
+          {/* CENTER */}
+          <main className="flex flex-col min-h-0 overflow-hidden relative">
+            {/* Scene info bar */}
+            <div className="flex-none px-4 py-2 border-b border-white/[0.06] flex items-center gap-2.5 shrink-0" style={{background: 'rgba(6,6,6,0.9)'}}>
+              <BookOpen className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+              <p className="text-[0.65rem] text-slate-500 truncate">{currentScene.chapter} · <span className="text-slate-300 font-semibold">{currentScene.title}</span></p>
             </div>
 
-        <section className="flex min-h-0 flex-1 flex-col justify-end overflow-hidden rounded-md border border-white/10 bg-ink-950/70 shadow-2xl">
-          <div
-            className="relative flex w-full min-h-[26rem] flex-1 items-end bg-cover bg-center p-4 lg:min-h-0 lg:p-5"
-            style={{
-              backgroundImage: `linear-gradient(180deg,rgba(17,24,39,0.22),rgba(3,4,10,0.94)),url('${currentScene.imageUrl}')`,
-            }}
-          >
-            {false && isCombatScene && combatRoundState.round > 0 ? (
+            {/* Scene image area - no narrative inside */}
+            <div className="flex-1 relative overflow-hidden" style={{minHeight: 0}}>
+              <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage: `url('${currentScene.imageUrl}')`}} />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-transparent to-transparent" />
+              {/* Character + companion overlay — top-left corner */}
+              {!isCharacterSelection && activeCharacter ? (
+                <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5">
+                  {/* Main character */}
+                  <div className="flex items-center gap-2 rounded-md px-2 py-1.5" style={{background: 'rgba(4,4,8,0.72)', border: '1px solid rgba(212,175,55,0.22)', backdropFilter: 'blur(6px)'}}>
+                    <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 border" style={{borderColor: 'rgba(212,175,55,0.4)'}}>
+                      <Image alt={activeCharacter.name} className="w-full h-full object-cover object-top" height={28} src={activeCharacter.modelImageUrl} width={28} />
+                    </div>
+                    <div>
+                      <p className="text-[0.58rem] font-cinzel uppercase tracking-[0.18em] leading-none" style={{color: 'rgba(212,175,55,0.75)'}}>Hauptcharakter</p>
+                      <p className="text-[0.7rem] font-bold text-slate-100 leading-none mt-0.5">{activeCharacter.name}</p>
+                      <p className="text-[0.55rem] text-slate-500 leading-none mt-0.5">{activeCharacter.className} · {activeCharacter.subclassName}</p>
+                    </div>
+                  </div>
+                  {/* Companion */}
+                  {activeNpc ? (
+                    <div className="flex items-center gap-2 rounded-md px-2 py-1.5" style={{background: 'rgba(4,4,8,0.6)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(6px)'}}>
+                      <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 border" style={{borderColor: 'rgba(255,255,255,0.15)'}}>
+                        <Image alt={activeNpc.name} className="w-full h-full object-cover object-top" height={20} src={activeNpc.modelImageUrl} width={20} />
+                      </div>
+                      <div>
+                        <p className="text-[0.55rem] text-slate-500 leading-none font-cinzel uppercase tracking-wide">Begleitung</p>
+                        <p className="text-[0.62rem] font-semibold text-slate-300 leading-none mt-0.5">{activeNpc.name}</p>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              <div className="absolute inset-0 p-0">
+          <>
+            {isCombatScene && combatRoundState.round > 0 ? (
               <div className="absolute left-3 right-3 top-14 z-20 grid gap-2 rounded-md border border-white/10 bg-ink-950/80 p-2 shadow-2xl backdrop-blur lg:grid-cols-[12rem_minmax(0,1fr)]">
                 <div className="rounded-md border border-ember-400/35 bg-ember-500/10 px-3 py-2">
                   <p className="text-[0.62rem] font-bold uppercase tracking-[0.18em] text-ember-300">
@@ -3729,13 +3957,14 @@ export default function Home() {
             ) : null}
 
             {isCharacterSelection ? (
-              <div className="grid h-full w-full items-stretch gap-4 lg:grid-cols-2">
+              <div className="absolute inset-0 grid items-stretch gap-4 lg:grid-cols-2 p-4">
                 {(["ryu", "ayane"] as CharacterId[]).map((characterId) => {
                   const character = characters[characterId];
 
                   return (
                     <button
-                      className="group flex min-h-0 flex-col overflow-hidden rounded-md border border-white/10 bg-ink-950/75 text-left transition hover:border-ember-400/70 hover:bg-ink-950/90"
+                      className="group flex min-h-0 flex-col overflow-hidden rounded-xl text-left transition-all hover:scale-[1.02] fantasy-border"
+                      style={{background: 'rgba(5,5,5,0.9)'}}
                       key={character.id}
                       onClick={() => selectCharacter(character.id)}
                       type="button"
@@ -3750,7 +3979,7 @@ export default function Home() {
                         />
                       </div>
                       <div className="border-t border-white/10 bg-black/50 p-4">
-                        <span className="block text-xl font-semibold">
+                        <span className="block text-xl font-bold font-cinzel tracking-wide" style={{color: '#d4af37'}}>
                           {character.name}
                         </span>
                         <span className="mt-1 block text-sm text-ember-300">
@@ -3770,57 +3999,19 @@ export default function Home() {
                   );
                 })}
               </div>
-            ) : (
-              <div className="relative w-full max-w-5xl rounded-md bg-black/15 pb-16 pr-16">
-                <div className="min-w-0">
-                  <p className="mb-2 inline-flex rounded-sm bg-ember-500 px-2 py-1 text-xs font-bold text-ink-950">
-                    {currentDialogueLine.speaker}
-                  </p>
-                  <p className="min-h-24 text-balance text-2xl font-semibold leading-snug transition-opacity duration-200">
-                    {dialogueWords.map((word, index) => (
-                      <span
-                        className={`inline-block transition-all duration-300 ${
-                          index < visibleWordCount
-                            ? "translate-y-0 opacity-100"
-                            : "translate-y-1 opacity-0"
-                        }`}
-                        key={`${word}-${index}`}
-                      >
-                        {word}
-                        {index < dialogueWords.length - 1 ? "\u00a0" : ""}
-                      </span>
-                    ))}
-                  </p>
-                  {activeCharacter && activeNpc && !isCharacterSelection ? (
-                    <p className="mt-3 text-sm leading-relaxed text-slate-300">
-                      Hauptcharakter: {activeCharacter.name}. Begleitung:{" "}
-                      {activeNpc.name}.
-                    </p>
-                  ) : null}
-                </div>
-                {!isLastDialogueLine || !isDialogueFullyVisible ? (
-                  <button
-                    aria-label="Dialog fortsetzen"
-                    className="absolute bottom-3 right-3 grid size-10 place-items-center rounded-full border border-ember-400/60 bg-ember-500 text-ink-950 shadow-glow transition hover:scale-105 hover:bg-ember-400"
-                    onClick={continueDialogue}
-                    title="Dialog fortsetzen"
-                    type="button"
-                  >
-                    <ChevronRight className="size-5" />
-                  </button>
-                ) : null}
-              </div>
-            )}
-          </div>
+            ) : null}
 
           {!isCharacterSelection ? (
             <div className="hidden min-h-20 space-y-2 overflow-y-auto border-t border-white/10 bg-ink-950/95 p-2">
               {!isCombatScene && pendingCheck ? (
-                <div className="rounded-md border border-ember-400/40 bg-ember-500/10 px-3 py-2 text-sm">
-                  <p className="font-bold text-ember-200">
-                    DM wartet auf Wurf
-                  </p>
-                  <p className="mt-1 text-xs text-slate-300">
+                <div className="rounded-lg px-3 py-2.5 text-sm" style={{background: 'rgba(212,175,55,0.07)', border: '1px solid rgba(212,175,55,0.22)'}}>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <div className="w-1 h-1 rotate-45 shrink-0" style={{background: 'rgba(212,175,55,0.7)'}} />
+                    <p className="font-bold font-cinzel text-[0.65rem] uppercase tracking-[0.16em]" style={{color: '#d4af37'}}>
+                      DM wartet auf Wurf
+                    </p>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
                     Bitte würfle {formatChecks(pendingCheck.checks)} im
                     Charakterbogen. Danach entscheidet der DC, ob die Szene
                     gelingt oder scheitert.
@@ -3832,28 +4023,155 @@ export default function Home() {
                 : null}
             </div>
           ) : null}
-        </section>
-          </div>
-          <aside className="flex min-h-0 flex-col gap-3 rounded-md border border-white/10 bg-ink-950/70 p-3">
-            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
-              <p className="text-xs uppercase tracking-[0.18em] text-ember-300">
-                Spieleraktionen
-              </p>
+          </>
+              </div>
+            {/* Narrative overlay - absolute bottom inside scene image */}
+            {!isCharacterSelection ? (
+              <div className="absolute bottom-0 left-0 right-0 z-20" style={{background: 'linear-gradient(to top, rgba(2,2,2,0.99) 0%, rgba(2,2,2,0.92) 55%, rgba(2,2,2,0.4) 82%, transparent 100%)'}}>
+                {/* Cinematic subtitle */}
+                <div
+                  className="px-8 pb-5 pt-3 cursor-pointer"
+                  onClick={() => { if (!isDialogueFullyVisible) setVisibleWordCount(dialogueWords.length); }}
+                >
+                  {/* Speaker label — small, gold, centered */}
+                  <p className="text-center mb-1.5 text-[0.52rem] font-cinzel uppercase tracking-[0.3em]" style={{color: 'rgba(201,168,76,0.7)'}}>
+                    {currentDialogueLine.speaker}
+                  </p>
+
+                  {/* Dialogue text — cinematic, centered */}
+                  <p className="text-center font-semibold leading-[1.75]" style={{fontSize: '1.05rem', color: '#f0e6cc', textShadow: '0 2px 16px rgba(0,0,0,1), 0 0 40px rgba(0,0,0,0.9)', whiteSpace: 'pre-wrap', letterSpacing: '0.015em'}}>
+                    {dialogueWords.map((word, index) => (
+                      <span
+                        className={`transition-opacity duration-150 ${index < visibleWordCount ? 'opacity-100' : 'opacity-0'}`}
+                        key={`${word}-${index}`}
+                      >
+                        {word + (index < dialogueWords.length - 1 ? ' ' : '')}
+                      </span>
+                    ))}
+                  </p>
+
+                  {/* Weiter / skip */}
+                  <div className="mt-3 flex justify-center min-h-[1.5rem]">
+                    {!isDialogueFullyVisible ? (
+                      <p className="text-[0.44rem] animate-pulse font-cinzel tracking-[0.3em] uppercase" style={{color: 'rgba(201,168,76,0.3)'}}>Tippen zum Überspringen</p>
+                    ) : !isLastDialogueLine ? (
+                      <button
+                        aria-label="Continue"
+                        className="flex items-center gap-1 px-5 py-1.5 text-[0.6rem] font-bold font-cinzel tracking-[0.18em] uppercase transition-all hover:brightness-110 active:scale-95"
+                        onClick={(e) => { e.stopPropagation(); continueDialogue(); }}
+                        style={{
+                          background: 'linear-gradient(135deg, #c9a84c 0%, #9a6e1e 100%)',
+                          color: '#150c00',
+                          borderRadius: '3px',
+                          boxShadow: '0 0 18px rgba(180,140,40,0.5)',
+                        }}
+                        type="button"
+                      >
+                        Weiter <ChevronRight className="w-3 h-3" />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* Story choices */}
+                {isLastDialogueLine && isDialogueFullyVisible && !isCombatScene && currentScene.choices.length > 0 ? (
+                  <div className="px-8 pb-4 space-y-1.5">
+                    {currentScene.choices.map((choice) => (
+                      <button
+                        className="w-full rounded px-4 py-2 text-left text-sm font-semibold text-slate-100 transition-all"
+                        key={choice.id}
+                        onClick={() => chooseAction(choice)}
+                        style={{background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(201,168,76,0.25)', backdropFilter: 'blur(4px)'}}
+                        type="button"
+                      >
+                        <span className="mr-2" style={{color: '#d4af37'}}>›</span>
+                        {choice.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+                        </div>{/* close flex-1 relative */}
+          </main>{/* close center */}
+
+          {/* RIGHT SIDEBAR */}
+          <aside className="hidden lg:flex flex-col min-h-0 overflow-hidden border-l border-white/[0.07]" style={{background: 'rgba(8,8,8,0.7)', backdropFilter: 'blur(8px)'}}>
+            {/* Spieler-Aktionen header */}
+            <div className="px-4 pt-4 pb-3 border-b border-white/[0.07] shrink-0">
+              <div className="flex items-center gap-1.5">
+                <div className="flex-1 h-px" style={{background: 'rgba(212,175,55,0.15)'}} />
+                <p className="text-[0.65rem] font-bold uppercase tracking-[0.28em] text-slate-500 font-cinzel">Spieleraktionen</p>
+                <div className="w-1 h-1 rotate-45" style={{background: 'rgba(212,175,55,0.4)'}} />
+                <div className="flex-1 h-px" style={{background: 'rgba(212,175,55,0.15)'}} />
+              </div>
+            </div>
+
+            {/* Non-combat action grid — hidden when story choices are ready so they get full space */}
+            {saveRestored && !isCombatScene && !(isLastDialogueLine && isDialogueFullyVisible && !isCharacterSelection) ? (
+              <div className="px-4 py-3 border-b border-white/[0.07] shrink-0">
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    {icon: Dice5, label: 'Würfeln', sub: 'W20', color: '#d4af37', onClick: () => setD20TriggerKey(k => k+1)},
+                    {icon: BookOpen, label: 'Nachschlagen', sub: 'Regelwerk', color: '#94a3b8', onClick: () => setIsDmPanelOpen((o: boolean) => !o)},
+                    {icon: Search, label: 'Untersuchen', sub: 'Umgebung', color: '#94a3b8', onClick: undefined},
+                    {icon: HandMetal, label: 'Interagieren', sub: 'Objekt / NSC', color: '#94a3b8', onClick: undefined},
+                  ] as const).map(({icon: Icon, label, sub, color, onClick}) => (
+                    <button
+                      className="rounded-lg p-3 flex flex-col items-start gap-1.5 transition-all hover:bg-white/10"
+                      key={label}
+                      onClick={onClick}
+                      style={{background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)'}}
+                      type="button"
+                    >
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{background: 'rgba(255,255,255,0.07)'}}>
+                        <Icon className="w-4 h-4" style={{color}} />
+                      </div>
+                      <p className="text-[0.68rem] font-bold text-white leading-tight font-cinzel uppercase tracking-wide">{label}</p>
+                      <p className="text-[0.65rem] text-slate-400 leading-tight">{sub}</p>
+                    </button>
+                  ))}
+                  <button
+                    className="col-span-2 rounded-lg p-3.5 flex items-center gap-3 transition-all hover:bg-white/10"
+                    style={{background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)'}}
+                    type="button"
+                  >
+                    <div className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center" style={{background: 'rgba(255,255,255,0.06)'}}>
+                      <Hourglass className="w-5 h-5 text-slate-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-white font-cinzel uppercase tracking-wide">Zug Beenden</p>
+                      <p className="text-[0.62rem] text-slate-400 font-cinzel">Runde beenden</p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 space-y-3">
+              {/* Story choices */}
+              {!isCharacterSelection && !isCombatScene && isLastDialogueLine && isDialogueFullyVisible ? (
+                <div className="space-y-2">
+                  <p className="text-[0.55rem] uppercase tracking-[0.28em] text-slate-500 font-cinzel">Aktionen</p>
+                  {currentScene.choices.map((choice) => renderChoiceButton(choice))}
+                </div>
+              ) : null}
               {isCombatScene && visibleInitiativeOrder.length === 0 ? (
-                <div className="space-y-2 rounded-md border border-ember-400/35 bg-ember-500/10 p-3">
-                  <div>
-                    <p className="text-sm font-black text-ember-100">
+                <div className="space-y-3 rounded-lg p-4" style={{background: 'rgba(212,175,55,0.05)', border: '1px solid rgba(212,175,55,0.18)'}}>
+                  <div className="flex items-center gap-2">
+                    <div className="w-1 h-1 rotate-45 shrink-0" style={{background: 'rgba(212,175,55,0.7)'}} />
+                    <p className="text-[0.7rem] font-black font-cinzel uppercase tracking-[0.18em]" style={{color: '#d4af37'}}>
                       Initiative starten
                     </p>
-                    <p className="mt-1 text-xs leading-relaxed text-slate-300">
-                      {initiativeStatus} Würfle Ryu und Ayane. Danach wird die
-                      Reihenfolge aufgebaut und der erste Zug erscheint hier.
-                    </p>
+                    <div className="flex-1 h-px" style={{background: 'rgba(212,175,55,0.15)'}} />
                   </div>
+                  <p className="text-[0.72rem] leading-relaxed text-slate-300">
+                    {initiativeStatus} Würfle die Initiative für jeden Charakter. Die Reihenfolge wird danach aufgebaut.
+                  </p>
                   <div className="grid gap-2">
                     {activeCharacter ? (
                       <button
-                        className="rounded-md border border-ember-400/55 bg-ember-500 px-3 py-2 text-left text-xs font-black text-ink-950 shadow-glow transition hover:border-ember-200 hover:bg-ember-400 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.06] disabled:text-slate-500 disabled:shadow-none"
+                        className="rounded-lg px-4 py-2.5 text-left text-sm font-bold transition-all disabled:cursor-not-allowed disabled:opacity-40"
                         disabled={initiativeRolls[activeCharacter.id] !== undefined}
                         onClick={() =>
                           rollFormula(
@@ -3862,6 +4180,9 @@ export default function Home() {
                             { initiativeCharacterId: activeCharacter.id },
                           )
                         }
+                        style={initiativeRolls[activeCharacter.id] !== undefined
+                          ? {background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8'}
+                          : {background: 'rgba(212,175,55,0.12)', border: '1px solid rgba(212,175,55,0.4)', color: '#f0e6cc'}}
                         type="button"
                       >
                         {activeCharacter.name} Initiative
@@ -3872,7 +4193,7 @@ export default function Home() {
                     ) : null}
                     {activeNpc ? (
                       <button
-                        className="rounded-md border border-white/10 bg-white/[0.06] px-3 py-2 text-left text-xs font-black text-slate-100 transition hover:border-ember-400/70 hover:bg-ember-500/15 disabled:cursor-not-allowed disabled:text-slate-500"
+                        className="rounded-lg px-4 py-2.5 text-left text-sm font-bold transition-all disabled:cursor-not-allowed disabled:opacity-40"
                         disabled={initiativeRolls[activeNpc.id] !== undefined}
                         onClick={() =>
                           rollFormula(
@@ -3881,6 +4202,9 @@ export default function Home() {
                             { initiativeCharacterId: activeNpc.id },
                           )
                         }
+                        style={initiativeRolls[activeNpc.id] !== undefined
+                          ? {background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8'}
+                          : {background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.14)', color: '#e2e8f0'}}
                         type="button"
                       >
                         {activeNpc.name} Initiative
@@ -3893,35 +4217,34 @@ export default function Home() {
                 </div>
               ) : null}
               {isCombatScene && visibleInitiativeOrder.length > 0 ? (
-                <div className="space-y-2 rounded-md border border-white/10 bg-white/[0.04] p-2">
+                <div className="space-y-2.5 rounded-lg p-3" style={{background: 'rgba(212,175,55,0.04)', border: '1px solid rgba(212,175,55,0.15)'}}>
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-[0.62rem] font-bold uppercase tracking-[0.16em] text-ember-300">
+                    <p className="text-[0.65rem] font-bold uppercase tracking-[0.22em] font-cinzel" style={{color: '#d4af37'}}>
                       Initiative
                     </p>
                     {combatRoundState.round > 0 ? (
-                      <span className="rounded border border-ember-400/35 bg-ember-500/10 px-2 py-1 text-[0.62rem] font-black text-ember-100">
+                      <span className="rounded px-2.5 py-1 text-xs font-black" style={{background: 'rgba(212,175,55,0.12)', border: '1px solid rgba(212,175,55,0.3)', color: '#f0e6cc'}}>
                         Runde {combatRoundState.round}
                       </span>
                     ) : null}
                   </div>
-                  <div className="grid gap-1">
+                  <div className="grid gap-1.5">
                     {visibleInitiativeOrder.map((actor, index) => (
                       <div
-                        className={`grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-2 rounded-md border px-2 py-1.5 text-[0.68rem] font-bold ${
-                          actor.id === combatRoundState.activeActorId
-                            ? "border-ember-400 bg-ember-500 text-ink-950 shadow-glow"
-                            : actor.kind === "enemy"
-                              ? "border-red-400/40 bg-red-500/10 text-red-100"
-                              : "border-white/10 bg-white/[0.06] text-slate-100"
-                        }`}
+                        className="grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-2 rounded-md border px-2.5 py-2 text-xs font-bold"
+                        style={actor.id === combatRoundState.activeActorId
+                          ? {background: 'rgba(212,175,55,0.18)', border: '1px solid rgba(212,175,55,0.5)', color: '#f0e6cc'}
+                          : actor.kind === "enemy"
+                            ? {background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#fecaca'}
+                            : {background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#e2e8f0'}}
                         key={actor.id}
                       >
-                        <span className="grid size-5 place-items-center rounded border border-current/25 text-[0.62rem]">
+                        <span className="grid size-6 place-items-center rounded border border-current/25 text-[0.65rem]">
                           {index + 1}
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate">{actor.name}</span>
-                          <span className="block text-[0.55rem] font-black uppercase tracking-[0.1em] opacity-70">
+                          <span className="block text-[0.62rem] font-black uppercase tracking-[0.1em] opacity-70">
                             {actor.id === combatRoundState.activeActorId
                               ? "Am Zug"
                               : actor.kind === "enemy"
@@ -3931,14 +4254,14 @@ export default function Home() {
                                   : "Held"}
                           </span>
                         </span>
-                        <span className="rounded border border-current/20 px-1.5 py-0.5 text-[0.62rem] font-black">
+                        <span className="rounded border border-current/20 px-2 py-0.5 text-xs font-black">
                           {actor.total !== undefined ? actor.total : "DM"}
                         </span>
                       </div>
                     ))}
                   </div>
                   {combatRoundState.round > 0 ? (
-                    <div className="rounded-md border border-ember-400/30 bg-ink-950/80 p-2 shadow-[0_0_20px_rgba(251,146,60,0.12)]">
+                    <div className="rounded-md p-2" style={{background: 'rgba(8,8,18,0.85)', border: '1px solid rgba(212,175,55,0.15)', boxShadow: '0 0 20px rgba(212,175,55,0.06)'}}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="text-sm font-black text-slate-100">
@@ -3969,7 +4292,7 @@ export default function Home() {
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <p className="text-[0.6rem] font-black uppercase tracking-[0.14em] text-slate-400">
+                              <p className="text-[0.6rem] font-black uppercase tracking-[0.14em] text-slate-400 font-cinzel">
                                 Letzte Aktion
                               </p>
                               <p className="mt-1 text-sm font-black text-slate-50">
@@ -3981,18 +4304,17 @@ export default function Home() {
                               </p>
                             </div>
                             <span
-                              className={`shrink-0 rounded px-2 py-1 text-[0.68rem] font-black ${
-                                lastCombatSummary.hit
-                                  ? "bg-ember-500 text-ink-950"
-                                  : "bg-slate-700 text-slate-100"
-                              }`}
+                              className="shrink-0 rounded px-2 py-1 text-[0.68rem] font-black"
+                              style={lastCombatSummary.hit
+                                ? {background: 'rgba(212,175,55,0.2)', border: '1px solid rgba(212,175,55,0.4)', color: '#f0e6cc'}
+                                : {background: 'rgba(100,116,139,0.3)', border: '1px solid rgba(100,116,139,0.3)', color: '#e2e8f0'}}
                             >
                               {lastCombatSummary.hit ? "Treffer" : "Miss"}
                             </span>
                           </div>
                           <div className="mt-2 grid grid-cols-3 gap-1 text-center">
                             <span className="rounded border border-white/10 bg-black/25 px-1.5 py-1">
-                              <span className="block text-[0.55rem] font-bold uppercase tracking-[0.1em] text-slate-400">
+                              <span className="block text-[0.55rem] font-bold uppercase tracking-[0.1em] text-slate-400 font-cinzel">
                                 Attack
                               </span>
                               <span className="text-sm font-black">
@@ -4000,7 +4322,7 @@ export default function Home() {
                               </span>
                             </span>
                             <span className="rounded border border-white/10 bg-black/25 px-1.5 py-1">
-                              <span className="block text-[0.55rem] font-bold uppercase tracking-[0.1em] text-slate-400">
+                              <span className="block text-[0.55rem] font-bold uppercase tracking-[0.1em] text-slate-400 font-cinzel">
                                 AC
                               </span>
                               <span className="text-sm font-black">
@@ -4008,7 +4330,7 @@ export default function Home() {
                               </span>
                             </span>
                             <span className="rounded border border-white/10 bg-black/25 px-1.5 py-1">
-                              <span className="block text-[0.55rem] font-bold uppercase tracking-[0.1em] text-slate-400">
+                              <span className="block text-[0.55rem] font-bold uppercase tracking-[0.1em] text-slate-400 font-cinzel">
                                 Schaden
                               </span>
                               <span className="text-sm font-black">
@@ -4033,32 +4355,28 @@ export default function Home() {
                       ) : null}
                       <div className="mt-2 grid grid-cols-3 gap-1 text-center text-[0.58rem] font-black uppercase tracking-[0.08em]">
                         <span
-                          className={`rounded border px-1 py-1 ${
-                            combatAttackFlowState.step === "chooseAction"
-                              ? "border-ember-400 bg-ember-500 text-ink-950"
-                              : "border-white/10 bg-white/[0.04] text-slate-400"
-                          }`}
+                          className="rounded border px-1 py-1"
+                          style={combatAttackFlowState.step === "chooseAction"
+                            ? {background: 'rgba(212,175,55,0.18)', border: '1px solid rgba(212,175,55,0.45)', color: '#f0e6cc'}
+                            : {background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: '#64748b'}}
                         >
                           1 Aktion
                         </span>
                         <span
-                          className={`rounded border px-1 py-1 ${
-                            combatAttackFlowState.step === "chooseTarget"
-                              ? "border-ember-400 bg-ember-500 text-ink-950"
-                              : "border-white/10 bg-white/[0.04] text-slate-400"
-                          }`}
+                          className="rounded border px-1 py-1"
+                          style={combatAttackFlowState.step === "chooseTarget"
+                            ? {background: 'rgba(212,175,55,0.18)', border: '1px solid rgba(212,175,55,0.45)', color: '#f0e6cc'}
+                            : {background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: '#64748b'}}
                         >
                           2 Ziel
                         </span>
                         <span
-                          className={`rounded border px-1 py-1 ${
-                            combatAttackFlowState.step === "awaitAttackRoll" ||
-                            combatAttackFlowState.step === "awaitDamageRoll"
-                              ? "border-emerald-400 bg-emerald-500 text-ink-950"
-                              : combatAttackFlowState.step === "turnResolved"
-                                ? "border-white/20 bg-white/[0.08] text-slate-200"
-                                : "border-white/10 bg-white/[0.04] text-slate-400"
-                          }`}
+                          className="rounded border px-1 py-1"
+                          style={combatAttackFlowState.step === "awaitAttackRoll" || combatAttackFlowState.step === "awaitDamageRoll"
+                            ? {background: 'rgba(52,211,153,0.15)', border: '1px solid rgba(52,211,153,0.35)', color: '#a7f3d0'}
+                            : combatAttackFlowState.step === "turnResolved"
+                              ? {background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)', color: '#cbd5e1'}
+                              : {background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: '#64748b'}}
                         >
                           3 Roll
                         </span>
@@ -4074,13 +4392,14 @@ export default function Home() {
                       {combatRoundState.turnControl?.requiresPlayerAction &&
                       combatAttackFlowState.step === "chooseAction" ? (
                         <div className="mt-2 rounded-md border border-white/10 bg-black/30 p-2">
-                          <p className="text-[0.62rem] font-bold uppercase tracking-[0.14em] text-ember-300">
+                          <p className="text-[0.62rem] font-bold uppercase tracking-[0.14em] font-cinzel" style={{color: 'rgba(212,175,55,0.8)'}}>
                             1. Aktion waehlen
                           </p>
                           <div className="mt-1 grid gap-1.5">
                             {activeCombatActions.map((action) => (
                               <button
-                                className="rounded-md border border-white/10 bg-white/[0.05] px-2 py-2 text-left transition hover:border-ember-400/70 hover:bg-ember-500/10"
+                                className="rounded-md px-2 py-2 text-left transition"
+                                style={{background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)'}}
                                 key={action.name}
                                 onClick={() => {
                                   setSelectedCombatTargetId(null);
@@ -4115,7 +4434,7 @@ export default function Home() {
                       (combatAttackFlowState.step === "chooseTarget" ||
                         combatAttackFlowState.step === "awaitAttackRoll") ? (
                         <div className="mt-2 rounded-md border border-white/10 bg-black/30 p-2">
-                          <p className="text-[0.62rem] font-bold uppercase tracking-[0.14em] text-ember-300">
+                          <p className="text-[0.62rem] font-bold uppercase tracking-[0.14em] font-cinzel" style={{color: 'rgba(212,175,55,0.8)'}}>
                             2. Ziel waehlen
                           </p>
                           {combatAttackFlowState.actionName ? (
@@ -4126,11 +4445,10 @@ export default function Home() {
                           <div className="mt-1 grid gap-1.5">
                             {availableCombatTargets.map((target) => (
                               <button
-                                className={`flex items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-left text-xs font-semibold transition ${
-                                  selectedCombatTargetId === target.id
-                                    ? "border-ember-400 bg-ember-500/20 text-ember-100"
-                                    : "border-white/10 bg-white/[0.05] text-slate-100 hover:border-ember-400/60"
-                                }`}
+                                className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs font-semibold transition"
+                                style={selectedCombatTargetId === target.id
+                                  ? {background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.45)', color: '#f0e6cc'}
+                                  : {background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#e2e8f0'}}
                                 key={target.id}
                                 onClick={() => {
                                   setSelectedCombatTargetId(target.id);
@@ -4162,7 +4480,8 @@ export default function Home() {
                         </div>
                       ) : null}
                       <button
-                        className="mt-2 w-full rounded-md border border-ember-400/55 bg-ember-500 px-3 py-2 text-xs font-black text-ink-950 shadow-glow transition hover:border-ember-200 hover:bg-ember-400 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.06] disabled:text-slate-500 disabled:shadow-none"
+                        className="mt-2 w-full rounded-md px-3 py-2 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-40 font-cinzel uppercase tracking-wide"
+                        style={{background: 'rgba(212,175,55,0.18)', border: '1px solid rgba(212,175,55,0.45)', color: '#f0e6cc', boxShadow: '0 0 12px rgba(212,175,55,0.15)'}}
                         disabled={
                           isBackendTurnResolving ||
                           (combatRoundState.turnControl?.requiresPlayerAction &&
@@ -4391,81 +4710,74 @@ export default function Home() {
                 : null}
             </div>
 
-            <div className="flex justify-center border-t border-white/10 pt-3 text-slate-50">
-              <button
-                aria-label="Letztes Wuerfelergebnis"
-                className="relative mx-auto grid size-16 place-items-center"
-                type="button"
-              >
-                <span
-                  className={`d20-result ${
-                    rollResult ? "d20-result-roll" : ""
-                  } grid size-16 place-items-center border bg-gradient-to-br text-xl font-black shadow-glow ${diceColorClass[diceColor]}`}
-                  key={rollAnimationKey}
-                >
-                  <svg
-                    aria-hidden="true"
-                    className="d20-result-shape"
-                    viewBox="0 0 100 100"
-                  >
-                    <polygon className="d20-outline" points="50,3 82,18 96,48 88,70 50,97 12,70 4,48 18,18" />
-                    <polygon className="d20-facet d20-facet-light" points="50,3 18,18 50,36 82,18" />
-                    <polygon className="d20-facet d20-facet-mid" points="18,18 4,48 50,36" />
-                    <polygon className="d20-facet d20-facet-dark" points="82,18 96,48 50,36" />
-                    <polygon className="d20-facet d20-facet-front" points="4,48 50,36 96,48 50,66" />
-                    <polygon className="d20-facet d20-facet-mid" points="4,48 12,70 50,66" />
-                    <polygon className="d20-facet d20-facet-dark" points="96,48 88,70 50,66" />
-                    <polygon className="d20-facet d20-facet-bottom" points="12,70 50,97 50,66" />
-                    <polygon className="d20-facet d20-facet-bottom-dark" points="88,70 50,97 50,66" />
-                    <polyline className="d20-edge" points="50,3 50,36 4,48 50,66 50,97" />
-                    <polyline className="d20-edge" points="18,18 50,36 82,18" />
-                    <polyline className="d20-edge" points="96,48 50,66 12,70" />
-                  </svg>
-                  <span className="d20-result-number">
-                    {rollResult?.total ?? "d20"}
-                  </span>
-                </span>
+
+            {/* Quest-Log */}
+            <div className="px-3 py-3 border-t border-white/[0.07] shrink-0">
+              <div className="flex items-center gap-1.5 mb-2.5">
+                <div className="flex-1 h-px" style={{background: 'rgba(212,175,55,0.15)'}} />
+                <p className="text-[0.55rem] font-bold uppercase tracking-[0.28em] text-slate-500 font-cinzel">Quest-Log</p>
+                <div className="flex-1 h-px" style={{background: 'rgba(212,175,55,0.15)'}} />
+              </div>
+              <div className="space-y-1.5">
+                {/* Active quest */}
+                <div className="rounded-lg p-2.5 flex items-start gap-2.5" style={{background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.2)'}}>
+                  <div className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center mt-0.5" style={{background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.3)'}}>
+                    <ScrollText className="w-3.5 h-3.5" style={{color: '#d4af37'}} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[0.7rem] font-bold text-white font-cinzel tracking-wide">Das gestohlene Ei</p>
+                    <p className="text-[0.58rem] text-slate-500 mt-0.5 leading-relaxed">Findet das gestohlene Ei, bevor es in falsche Hände gerät.</p>
+                  </div>
+                  <div className="shrink-0 w-2.5 h-2.5 rotate-45 mt-1" style={{background: '#d4af37', boxShadow: '0 0 5px rgba(212,175,55,0.5)'}} />
+                </div>
+                {/* Inactive quests */}
+                {[
+                  {icon: ShieldCheck, title: 'Intrigen in Falkenwacht', desc: 'Untersucht die politische Lage in der Stadt und gewinnt Verbündete.'},
+                  {icon: Swords, title: 'Der Schatten im Rat', desc: 'Findet Hinweise auf den Verräter im Rat der Vier.'},
+                ].map(({icon: Icon, title, desc}) => (
+                  <div className="rounded-lg p-2.5 flex items-start gap-2.5" key={title} style={{background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)'}}>
+                    <div className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center mt-0.5" style={{background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)'}}>
+                      <Icon className="w-3.5 h-3.5 text-slate-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[0.7rem] font-bold text-slate-500 font-cinzel tracking-wide">{title}</p>
+                      <p className="text-[0.58rem] text-slate-700 mt-0.5 leading-relaxed">{desc}</p>
+                    </div>
+                    <div className="shrink-0 w-3 h-3 rounded-full mt-1 border border-slate-700" />
+                  </div>
+                ))}
+              </div>
+              <button className="mt-2 w-full flex items-center justify-center gap-1 py-1.5 text-[0.6rem] font-semibold text-slate-600 hover:text-slate-400 transition-colors border border-white/[0.06] rounded-lg hover:bg-white/5 font-cinzel uppercase tracking-wider" type="button">
+                Alle Quests anzeigen
+                <ChevronDown className="w-2.5 h-2.5" />
               </button>
             </div>
+
+
           </aside>
         </div>
-      </section>
-      <aside
-        className="hidden"
-      >
-        <button
-          aria-label="Letztes Wuerfelergebnis"
-          className="relative mx-auto grid size-16 place-items-center"
-          type="button"
-        >
-          <span
-            className={`d20-result ${
-              rollResult ? "d20-result-roll" : ""
-            } grid size-16 place-items-center border bg-gradient-to-br text-xl font-black shadow-glow ${diceColorClass[diceColor]}`}
-            key={rollAnimationKey}
-          >
-            <svg
-              aria-hidden="true"
-              className="d20-result-shape"
-              viewBox="0 0 100 100"
-            >
-              <polygon className="d20-outline" points="50,3 82,18 96,48 88,70 50,97 12,70 4,48 18,18" />
-              <polygon className="d20-facet d20-facet-light" points="50,3 18,18 50,36 82,18" />
-              <polygon className="d20-facet d20-facet-mid" points="18,18 4,48 50,36" />
-              <polygon className="d20-facet d20-facet-dark" points="82,18 96,48 50,36" />
-              <polygon className="d20-facet d20-facet-front" points="4,48 50,36 96,48 50,66" />
-              <polygon className="d20-facet d20-facet-mid" points="4,48 12,70 50,66" />
-              <polygon className="d20-facet d20-facet-dark" points="96,48 88,70 50,66" />
-              <polygon className="d20-facet d20-facet-bottom" points="12,70 50,97 50,66" />
-              <polygon className="d20-facet d20-facet-bottom-dark" points="88,70 50,97 50,66" />
-              <polyline className="d20-edge" points="50,3 50,36 4,48 50,66 50,97" />
-              <polyline className="d20-edge" points="18,18 50,36 82,18" />
-              <polyline className="d20-edge" points="96,48 50,66 12,70" />
-            </svg>
-            <span className="d20-result-number">{rollResult?.total ?? "d20"}</span>
-          </span>
-        </button>
-      </aside>
-    </main>
+
+      {/* Floating D20 — bottom-right of center column, beside the narrow dialogue box */}
+      <div className="fixed z-50" style={{bottom:'72px', right:'332px', filter:'drop-shadow(0 0 16px rgba(80,120,255,0.4))'}}>
+        <D20Component
+          currentValue={rollResult?.total ?? null}
+          rollTrigger={d20TriggerKey}
+          onRoll={(val) => {
+            const result = {
+              diceType: 20,
+              rolls: [val],
+              selectedRoll: val,
+              modifier: rollModifier,
+              total: val + rollModifier,
+              mode: rollMode,
+              label: 'd20',
+            };
+            setRollResult(result);
+            setRollAnimationKey((k) => k + 1);
+            addGameLog({ title: 'd20 gewürfelt', detail: `Ergebnis ${result.total}` });
+          }}
+        />
+      </div>
+    </div>
   );
 }
