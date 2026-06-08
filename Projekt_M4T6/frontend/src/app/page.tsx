@@ -2778,7 +2778,7 @@ export default function Home() {
                 <div className="px-4 py-2.5 border-t border-white/[0.07] shrink-0">
                   <div className="flex items-center gap-2.5 rounded-lg px-2 py-2" style={{background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)'}}>
                     <div className="w-8 h-8 rounded overflow-hidden shrink-0 bg-black/40 flex items-end justify-center">
-                      <Image alt={activeNpc.name} className="max-h-8 object-contain" height={40} src={activeNpc.modelImageUrl} width={32} />
+                      <Image alt={activeNpc.name} className="object-contain" height={40} src={activeNpc.modelImageUrl} style={{width: 'auto', maxHeight: '2rem'}} width={32} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-[0.65rem] font-bold text-slate-300 truncate font-cinzel">{activeNpc.name}</p>
