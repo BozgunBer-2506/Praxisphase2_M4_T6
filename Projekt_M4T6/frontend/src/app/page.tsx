@@ -11,7 +11,9 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { isLoggedIn, verifyToken } from "@/lib/auth";
 import dynamic from "next/dynamic";
 
 const D20Component = dynamic(() => import("@/components/D20"), { ssr: false });
@@ -404,6 +406,7 @@ const findMatchingSaveState = (
 };
 
 export default function Home() {
+  const router = useRouter();
   const [currentSceneId, setCurrentSceneId] = useState(initialSceneId);
   const [saveRestored, setSaveRestored] = useState(false);
   const [selectedCharacterId, setSelectedCharacterId] =
@@ -503,6 +506,11 @@ export default function Home() {
     venom: "bg-lime-400",
     blood: "bg-red-500",
   };
+
+  useEffect(() => {
+    if (!isLoggedIn()) { router.replace("/login"); return; }
+    verifyToken().then((valid) => { if (!valid) router.replace("/login"); });
+  }, [router]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

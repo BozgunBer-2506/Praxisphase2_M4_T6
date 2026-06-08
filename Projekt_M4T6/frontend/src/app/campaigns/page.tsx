@@ -13,7 +13,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { characters, type CharacterId } from "@/data/scenes";
+import { isLoggedIn, logout, verifyToken } from "@/lib/auth";
 
 const SAVE_KEY = "falkenwacht.saveStates";
 const LAST_SAVE_KEY = "falkenwacht.lastSave";
@@ -56,7 +58,13 @@ const sessions = [
 ];
 
 export default function CampaignsPage() {
+  const router = useRouter();
   const [saveStates, setSaveStates] = useState<SaveState[]>([]);
+
+  useEffect(() => {
+    if (!isLoggedIn()) { router.replace("/login"); return; }
+    verifyToken().then((valid) => { if (!valid) router.replace("/login"); });
+  }, [router]);
 
   useEffect(() => {
     try {
@@ -115,16 +123,26 @@ export default function CampaignsPage() {
               Kampagnenportal
             </h1>
           </div>
-          <div className="flex items-center gap-2 rounded-md border border-ember-400/30 bg-ink-950/70 px-3 py-2 shadow-glow">
-            <ShieldCheck className="size-4 text-ember-400" />
-            <div>
-              <p className="text-[0.65rem] uppercase tracking-[0.18em] text-slate-400">
-                Spielerbereich
-              </p>
-              <p className="text-xs font-semibold text-slate-100">
-                Kampagne & Speicherstände
-              </p>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 rounded-md px-3 py-2" style={{background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.2)'}}>
+              <ShieldCheck className="size-4" style={{color: '#d4af37'}} />
+              <div>
+                <p className="text-[0.62rem] uppercase tracking-[0.18em] text-slate-400 font-cinzel">
+                  Spielerbereich
+                </p>
+                <p className="text-xs font-semibold text-slate-100">
+                  Kampagne & Speicherstände
+                </p>
+              </div>
             </div>
+            <button
+              className="rounded-md px-3 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors"
+              onClick={logout}
+              style={{background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)'}}
+              type="button"
+            >
+              Abmelden
+            </button>
           </div>
         </header>
 
