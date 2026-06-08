@@ -512,21 +512,24 @@ export default function Home() {
   };
 
   const playClickSound = useCallback(() => {
+    if (!musicPlaying) return;
     try {
       const ctx = new AudioContext();
+      // Deep stone tap: low sine thud
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
+      osc.type = "sine";
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.frequency.setValueAtTime(180, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.12);
-      gain.gain.setValueAtTime(0.18, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+      osc.frequency.setValueAtTime(90, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(35, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.22, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
       osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.18);
+      osc.stop(ctx.currentTime + 0.22);
       osc.onended = () => ctx.close();
     } catch { /* audio not supported */ }
-  }, []);
+  }, [musicPlaying]);
 
   const toggleMusic = () => {
     if (!audioRef.current) {
@@ -2516,91 +2519,57 @@ export default function Home() {
   return (
     <div className="h-dvh flex flex-col overflow-hidden text-white" style={{background: '#050505'}}>
       {/* HEADER */}
-      <header className="relative flex-none h-14 flex items-center px-4 gap-3 border-b border-white/[0.08] z-40" style={{background: 'rgba(8,8,8,0.97)', backdropFilter: 'blur(20px)'}}>
-        {/* Logo + nav */}
-        <div className="flex items-center gap-3 shrink-0">
-          {/* Logo + campaign name */}
-          <div className="hidden lg:flex items-center gap-2 mr-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src='/logo-eagle.png' alt='Falkenwacht' width={36} height={36} style={{filter: 'drop-shadow(0 0 6px rgba(212,175,55,0.7))', objectFit: 'contain'}} />
-
-          </div>
-          <nav className="hidden lg:flex items-center gap-0.5">
-            <Link
-              href="/campaigns"
-              className="px-3 py-1.5 text-[0.68rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] transition-all relative text-slate-400 hover:text-slate-200 hover:bg-white/5"
-            >
-              Kampagne
-            </Link>
-            <Link
-              href="/login"
-              className="px-3 py-1.5 text-[0.68rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] transition-all text-slate-400 hover:text-slate-200 hover:bg-white/5"
-            >
-              Login
-            </Link>
-            {isCombatScene ? (
-              <Link
-                href="/combat"
-                className="px-3 py-1.5 text-[0.68rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] transition-all text-red-400 hover:text-red-200 hover:bg-red-500/10"
-                onClick={prepareCombatRouteHandoff}
-              >
-                Combat
-              </Link>
-            ) : null}
-          </nav>
+      <header className="relative flex-none h-14 flex items-center px-3 gap-2 border-b border-white/[0.08] z-40" style={{background: 'rgba(8,8,8,0.97)', backdropFilter: 'blur(20px)'}}>
+        {/* Left: logo always visible */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src='/logo-eagle.png' alt='Falkenwacht' width={28} height={28} style={{filter: 'drop-shadow(0 0 5px rgba(212,175,55,0.7))', objectFit: 'contain'}} />
+          <span className="text-sm font-bold tracking-widest font-cinzel hidden sm:block" style={{color: '#d4af37'}}>Falkenwacht</span>
         </div>
 
-        {/* Center title */}
-        <div className="flex-1 text-center hidden md:block">
-          <h1 className="text-base font-bold tracking-widest font-cinzel" style={{color: '#d4af37'}}>
-            Falkenwacht
-          </h1>
-          {/* Decorative divider */}
-          <div className="flex items-center justify-center gap-1 mt-0.5">
-            <div className="w-12 h-px" style={{background: 'linear-gradient(90deg, transparent, rgba(212,175,55,0.5))'}} />
-            <div className="w-1.5 h-1.5 rotate-45" style={{background: '#d4af37', opacity: 0.7}} />
-            <div className="w-12 h-px" style={{background: 'linear-gradient(90deg, rgba(212,175,55,0.5), transparent)'}} />
-          </div>
-        </div>
-
-        {/* Right side - icon buttons + DM avatar */}
-        <div className="flex items-center shrink-0 ml-auto">
-          {/* Icon buttons */}
-          <div className="flex items-center gap-1 mr-3">
-            {([
-              {icon: Dice5, label: 'Würfeln', onClick: () => setD20TriggerKey(k => k+1)},
-              {icon: BookOpen, label: 'Regelwerk', onClick: () => setIsDmPanelOpen((o: boolean) => !o)},
-              {icon: ClipboardList, label: 'Log', onClick: () => setIsLogPanelOpen((o: boolean) => !o)},
-            ] as const).map(({icon: Icon, label, onClick}) => (
-              <button
-                key={label}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[0.65rem] font-bold font-cinzel uppercase tracking-wide text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                onClick={onClick}
-                type="button"
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {label}
-              </button>
-            ))}
-          </div>
-          {/* Vertical divider */}
-          <div className="w-px h-6 mx-2" style={{background: 'rgba(255,255,255,0.1)'}} />
-          {/* Account button + dropdown */}
-          <div className="relative mr-1" ref={accountRef}>
+        {/* Center: action buttons */}
+        <div className="flex items-center gap-0.5 mx-auto">
+          {([
+            {icon: Dice5, label: 'Würfeln', onClick: () => setD20TriggerKey(k => k+1)},
+            {icon: BookOpen, label: 'Regelwerk', onClick: () => setIsDmPanelOpen((o: boolean) => !o)},
+            {icon: ClipboardList, label: 'Log', onClick: () => setIsLogPanelOpen((o: boolean) => !o)},
+          ] as const).map(({icon: Icon, label, onClick}) => (
             <button
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded transition-colors hover:bg-white/5"
+              key={label}
+              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-[0.65rem] font-bold font-cinzel uppercase tracking-wide text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+              onClick={onClick}
+              type="button"
+            >
+              <Icon className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">{label}</span>
+            </button>
+          ))}
+          {isCombatScene ? (
+            <Link className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-[0.65rem] font-bold font-cinzel uppercase tracking-wide border border-red-400/40 bg-red-500/15 text-red-300 hover:border-red-300 transition-colors" href="/combat" onClick={prepareCombatRouteHandoff}>
+              <Swords className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">Combat</span>
+            </Link>
+          ) : null}
+        </div>
+
+        {/* Right: account + DM */}
+        <div className="flex items-center gap-1 shrink-0">
+          {/* Account button - always visible */}
+          <div className="relative" ref={accountRef}>
+            <button
+              className="flex items-center gap-1.5 px-1.5 sm:px-2.5 py-1.5 rounded transition-colors hover:bg-white/5"
               onClick={() => setIsAccountOpen((o) => !o)}
               style={{background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.2)'}}
               type="button"
             >
-              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[0.55rem] font-bold font-cinzel" style={{background: 'rgba(212,175,55,0.25)', color: '#d4af37'}}>
+              <div className="w-6 h-6 rounded-full flex items-center justify-center text-[0.6rem] font-bold font-cinzel shrink-0" style={{background: 'rgba(212,175,55,0.25)', color: '#d4af37'}}>
                 {username ? username[0].toUpperCase() : "?"}
               </div>
-              <div className="text-left">
+              <div className="text-left hidden sm:block">
                 <p className="text-[0.55rem] font-cinzel uppercase tracking-wide leading-none" style={{color: 'rgba(212,175,55,0.7)'}}>Spieler</p>
-                <p className="text-[0.62rem] font-bold text-slate-100 leading-none mt-0.5 max-w-[120px] truncate">{username ?? "..."}</p>
+                <p className="text-[0.62rem] font-bold text-slate-100 leading-none mt-0.5 max-w-[100px] truncate">{username ?? "..."}</p>
               </div>
-              <ChevronDown className="w-3 h-3 text-slate-500" />
+              <ChevronDown className="w-3 h-3 text-slate-500 hidden sm:block" />
             </button>
             {isAccountOpen ? (
               <div className="absolute right-0 top-10 z-50 w-64 rounded-lg shadow-2xl" style={{background: 'rgba(8,8,8,0.98)', border: '1px solid rgba(212,175,55,0.2)', backdropFilter: 'blur(20px)'}}>
@@ -2657,12 +2626,6 @@ export default function Home() {
             </div>
             <ChevronDown className="w-3 h-3 text-slate-500" />
           </button>
-          {isCombatScene ? (
-            <Link className="ml-2 flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[0.68rem] font-bold border border-red-400/40 bg-red-500/15 text-red-100 hover:border-red-300 transition-colors" href="/combat" onClick={prepareCombatRouteHandoff}>
-              <Swords className="w-3 h-3" />
-              Combat
-            </Link>
-          ) : null}
         </div>
 
         {/* Log dropdown */}
