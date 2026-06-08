@@ -2553,8 +2553,7 @@ export default function Home() {
         {/* Center title */}
         <div className="flex-1 text-center hidden md:block">
           <h1 className="text-base font-bold tracking-widest font-cinzel" style={{color: '#d4af37'}}>
-            {CAMPAIGN_TITLE.replace(' - Die Korruption der Greifenstadt', '')}
-            {currentScene.title !== 'Charakterwahl' ? `: ${currentScene.title}` : ''}
+            Falkenwacht
           </h1>
           {/* Decorative divider */}
           <div className="flex items-center justify-center gap-1 mt-0.5">

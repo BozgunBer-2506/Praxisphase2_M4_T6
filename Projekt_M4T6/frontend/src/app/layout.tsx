@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { Cinzel, Inter } from "next/font/google";
@@ -7,8 +7,15 @@ const cinzel = Cinzel({ subsets: ["latin"], variable: "--font-cinzel", display: 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "AI Narrative DnD Visual Novel",
-  description: "Mobile-first MVP demo for an AI-assisted DnD visual novel.",
+  title: "Falkenwacht",
+  description: "AI-powered D&D 5e Visual Novel",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
