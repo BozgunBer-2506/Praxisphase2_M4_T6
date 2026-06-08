@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { getUsername, getUserId, isLoggedIn, logout } from "@/lib/auth";
@@ -409,6 +409,8 @@ export default function Home() {
   const [userId, setUserId] = useState<number | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
+  const [musicPlaying, setMusicPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [currentSceneId, setCurrentSceneId] = useState(initialSceneId);
   const [saveRestored, setSaveRestored] = useState(false);
   const [selectedCharacterId, setSelectedCharacterId] =
@@ -508,6 +510,63 @@ export default function Home() {
     venom: "bg-lime-400",
     blood: "bg-red-500",
   };
+
+  const playClickSound = useCallback(() => {
+    try {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(180, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.12);
+      gain.gain.setValueAtTime(0.18, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.18);
+      osc.onended = () => ctx.close();
+    } catch { /* audio not supported */ }
+  }, []);
+
+  const toggleMusic = () => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio("/sounds/ambient.mp3");
+      audioRef.current.loop = true;
+      audioRef.current.volume = 0.25;
+    }
+    if (musicPlaying) {
+      audioRef.current.pause();
+      setMusicPlaying(false);
+    } else {
+      void audioRef.current.play();
+      setMusicPlaying(true);
+    }
+  };
+
+  useEffect(() => {
+    const handleFirstInteraction = () => {
+      if (!audioRef.current) {
+        audioRef.current = new Audio("/sounds/ambient.mp3");
+        audioRef.current.loop = true;
+        audioRef.current.volume = 0.25;
+      }
+      void audioRef.current.play().then(() => setMusicPlaying(true)).catch(() => {});
+    };
+
+    const handleGlobalClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest("button") || target.closest("a")) {
+        playClickSound();
+      }
+    };
+
+    document.addEventListener("click", handleFirstInteraction, { once: true });
+    document.addEventListener("click", handleGlobalClick);
+    return () => {
+      document.removeEventListener("click", handleFirstInteraction);
+      document.removeEventListener("click", handleGlobalClick);
+    };
+  }, [playClickSound]);
 
   useEffect(() => {
     if (isLoggedIn()) {
@@ -2463,7 +2522,7 @@ export default function Home() {
           {/* Logo + campaign name */}
           <div className="hidden lg:flex items-center gap-2 mr-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src='/logo-eagle.svg' alt='Falkenwacht' width={28} height={28} style={{filter: 'drop-shadow(0 0 4px rgba(212,175,55,0.5))'}} />
+            <img src='/logo-eagle.png' alt='Falkenwacht' width={36} height={36} style={{filter: 'drop-shadow(0 0 6px rgba(212,175,55,0.7))', objectFit: 'contain'}} />
 
           </div>
           <nav className="hidden lg:flex items-center gap-0.5">
@@ -2870,7 +2929,7 @@ export default function Home() {
                   <button className="text-slate-600 hover:text-slate-400 transition-colors" type="button">
                     <UserPlus className="w-4 h-4" />
                   </button>
-                  <button className="text-slate-600 hover:text-slate-400 transition-colors" type="button">
+                  <button className="transition-colors" onClick={toggleMusic} title={musicPlaying ? "Musik pausieren" : "Musik abspielen"} type="button" style={{color: musicPlaying ? '#d4af37' : undefined}}>
                     <Music className="w-4 h-4" />
                   </button>
                   <div className="flex-1 relative">
@@ -4058,7 +4117,7 @@ export default function Home() {
                       <button
                         aria-label="Continue"
                         className="flex items-center gap-1 px-5 py-1.5 text-[0.6rem] font-bold font-cinzel tracking-[0.18em] uppercase transition-all hover:brightness-110 active:scale-95"
-                        onClick={(e) => { e.stopPropagation(); continueDialogue(); }}
+                        onClick={(e) => { e.stopPropagation(); playClickSound(); continueDialogue(); }}
                         style={{
                           background: 'linear-gradient(135deg, #c9a84c 0%, #9a6e1e 100%)',
                           color: '#150c00',
@@ -4080,7 +4139,7 @@ export default function Home() {
                       <button
                         className="w-full rounded px-4 py-2 text-left text-sm font-semibold text-slate-100 transition-all"
                         key={choice.id}
-                        onClick={() => chooseAction(choice)}
+                        onClick={() => { playClickSound(); chooseAction(choice); }}
                         style={{background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(201,168,76,0.25)', backdropFilter: 'blur(4px)'}}
                         type="button"
                       >
