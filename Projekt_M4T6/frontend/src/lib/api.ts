@@ -33,7 +33,14 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as Record<string, unknown>;
-    const msg = (body.detail as string) ?? (body.message as string) ?? `HTTP ${res.status}`;
+    let msg = `HTTP ${res.status}`;
+    if (typeof body.detail === "string") {
+      msg = body.detail;
+    } else if (Array.isArray(body.detail)) {
+      msg = (body.detail as Array<{ msg: string }>).map((e) => e.msg).join(", ");
+    } else if (typeof body.message === "string") {
+      msg = body.message;
+    }
     throw new ApiError(res.status, msg);
   }
 

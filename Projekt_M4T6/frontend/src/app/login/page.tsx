@@ -93,8 +93,9 @@ export default function LoginPage() {
                 <input
                   className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-600"
                   disabled={loading}
+                  minLength={3}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Benutzername"
+                  placeholder="Mind. 3 Zeichen"
                   required
                   type="text"
                   value={username}
@@ -110,7 +111,8 @@ export default function LoginPage() {
                   className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-600"
                   disabled={loading}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Passwort"
+                  minLength={6}
+                  placeholder="Mind. 6 Zeichen"
                   required
                   type="password"
                   value={password}
