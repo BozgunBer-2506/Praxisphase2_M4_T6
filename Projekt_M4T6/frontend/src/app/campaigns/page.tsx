@@ -97,7 +97,7 @@ export default function CampaignsPage() {
   };
 
   return (
-    <main className="min-h-screen px-4 py-5 text-slate-50 sm:px-6 lg:px-8">
+    <main className="min-h-screen overflow-y-auto px-4 py-5 text-slate-50 sm:px-6 lg:px-8" style={{maxHeight: '100dvh'}}>
       <section className="mx-auto flex min-h-[calc(100vh-2.5rem)] max-w-6xl flex-col gap-5">
         <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>

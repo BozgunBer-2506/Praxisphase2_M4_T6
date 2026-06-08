@@ -166,8 +166,16 @@ export default function CombatPage() {
   };
 
   return (
-    <main className="min-h-dvh bg-ink-950 px-4 py-5 text-slate-50">
-      <section className="mx-auto flex min-h-[calc(100dvh-2.5rem)] w-full max-w-6xl flex-col gap-4">
+    <main className="bg-ink-950 px-4 py-5 text-slate-50 overflow-y-auto" style={{maxHeight: '100dvh'}}>
+      <section className="mx-auto w-full max-w-6xl flex flex-col gap-4">
+        <div className="flex items-center gap-3 mb-2">
+          <Link
+            href="/"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold text-slate-300 hover:text-white hover:bg-white/10 transition-colors border border-white/10"
+          >
+            ← Zurück
+          </Link>
+        </div>
         <header className="rounded-md border border-white/10 bg-white/[0.05] p-4">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-ember-300">
             Falkenwacht Combat
