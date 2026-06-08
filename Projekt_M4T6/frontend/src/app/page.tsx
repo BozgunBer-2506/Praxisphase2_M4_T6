@@ -411,6 +411,7 @@ export default function Home() {
   const accountRef = useRef<HTMLDivElement>(null);
   const [musicPlaying, setMusicPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const userMutedRef = useRef(false);
   const [currentSceneId, setCurrentSceneId] = useState(initialSceneId);
   const [saveRestored, setSaveRestored] = useState(false);
   const [selectedCharacterId, setSelectedCharacterId] =
@@ -512,10 +513,8 @@ export default function Home() {
   };
 
   const playClickSound = useCallback(() => {
-    if (!musicPlaying) return;
     try {
       const ctx = new AudioContext();
-      // Deep stone tap: low sine thud
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = "sine";
@@ -529,7 +528,7 @@ export default function Home() {
       osc.stop(ctx.currentTime + 0.22);
       osc.onended = () => ctx.close();
     } catch { /* audio not supported */ }
-  }, [musicPlaying]);
+  }, []);
 
   const toggleMusic = () => {
     if (!audioRef.current) {
@@ -540,14 +539,17 @@ export default function Home() {
     if (musicPlaying) {
       audioRef.current.pause();
       setMusicPlaying(false);
+      userMutedRef.current = true;
     } else {
       void audioRef.current.play();
       setMusicPlaying(true);
+      userMutedRef.current = false;
     }
   };
 
   useEffect(() => {
     const handleFirstInteraction = () => {
+      if (userMutedRef.current) return;
       if (!audioRef.current) {
         audioRef.current = new Audio("/sounds/ambient.mp3");
         audioRef.current.loop = true;
@@ -733,7 +735,7 @@ export default function Home() {
       attackFlowState: combatAttackFlowState,
       selectedTargetId: selectedCombatTargetId,
       status: combatStatus,
-      logEntries: gameLog.slice(0, 12),
+      logEntries: [],
     });
   };
   const backendEncounterState = useMemo<EncounterState | null>(() => {
@@ -2520,26 +2522,35 @@ export default function Home() {
     <div className="h-dvh flex flex-col overflow-hidden text-white" style={{background: '#050505'}}>
       {/* HEADER */}
       <header className="relative flex-none h-14 flex items-center px-3 gap-2 border-b border-white/[0.08] z-40" style={{background: 'rgba(8,8,8,0.97)', backdropFilter: 'blur(20px)'}}>
-        {/* Left: logo always visible */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Left: logo + nav links */}
+        <div className="flex items-center gap-1 shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src='/logo-eagle.png' alt='Falkenwacht' width={28} height={28} style={{filter: 'drop-shadow(0 0 5px rgba(212,175,55,0.7))', objectFit: 'contain'}} />
+          <img src='/logo-eagle.png' alt='Falkenwacht' width={30} height={30} style={{filter: 'drop-shadow(0 0 6px rgba(212,175,55,0.7))', objectFit: 'contain', marginRight: '4px'}} />
+          <Link href="/campaigns" className="hidden sm:flex px-2.5 py-1.5 text-[0.65rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors">
+            Kampagne
+          </Link>
+          <Link href="/login" className="hidden sm:flex px-2.5 py-1.5 text-[0.65rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors">
+            Login
+          </Link>
+          {isCombatScene ? (
+            <Link href="/combat" className="hidden sm:flex px-2.5 py-1.5 text-[0.65rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] border border-red-400/40 bg-red-500/15 text-red-300 hover:border-red-300 transition-colors" onClick={prepareCombatRouteHandoff}>
+              Combat
+            </Link>
+          ) : null}
         </div>
 
-        {/* Center: title + action buttons */}
-        <div className="flex-1 flex items-center justify-center gap-3">
-          {/* Title with decorative lines - hidden on mobile */}
-          <div className="hidden md:flex items-center gap-2">
-            <div className="w-10 h-px" style={{background: 'linear-gradient(90deg, transparent, rgba(212,175,55,0.5))'}} />
-            <div className="w-1 h-1 rotate-45" style={{background: '#d4af37', opacity: 0.7}} />
-            <h1 className="text-sm font-bold tracking-widest font-cinzel" style={{color: '#d4af37'}}>Falkenwacht</h1>
-            <div className="w-1 h-1 rotate-45" style={{background: '#d4af37', opacity: 0.7}} />
-            <div className="w-10 h-px" style={{background: 'linear-gradient(90deg, rgba(212,175,55,0.5), transparent)'}} />
-          </div>
-          {/* Divider */}
-          <div className="hidden md:block w-px h-5" style={{background: 'rgba(255,255,255,0.1)'}} />
+        {/* Center: title absolutely centered */}
+        <div className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-2 pointer-events-none">
+          <div className="w-12 h-px" style={{background: 'linear-gradient(90deg, transparent, rgba(212,175,55,0.5))'}} />
+          <div className="w-1.5 h-1.5 rotate-45" style={{background: '#d4af37', opacity: 0.7}} />
+          <h1 className="text-base font-bold tracking-widest font-cinzel whitespace-nowrap" style={{color: '#d4af37'}}>Falkenwacht</h1>
+          <div className="w-1.5 h-1.5 rotate-45" style={{background: '#d4af37', opacity: 0.7}} />
+          <div className="w-12 h-px" style={{background: 'linear-gradient(90deg, rgba(212,175,55,0.5), transparent)'}} />
+        </div>
+
+        {/* Right side: action buttons + account + DM */}
+        <div className="ml-auto flex items-center gap-0.5 shrink-0">
           {/* Action buttons */}
-          <div className="flex items-center gap-0.5">
           {([
             {icon: Dice5, label: 'Würfeln', onClick: () => setD20TriggerKey(k => k+1)},
             {icon: BookOpen, label: 'Regelwerk', onClick: () => setIsDmPanelOpen((o: boolean) => !o)},
@@ -2555,18 +2566,8 @@ export default function Home() {
               <span className="hidden sm:inline">{label}</span>
             </button>
           ))}
-          {isCombatScene ? (
-            <Link className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-[0.65rem] font-bold font-cinzel uppercase tracking-wide border border-red-400/40 bg-red-500/15 text-red-300 hover:border-red-300 transition-colors" href="/combat" onClick={prepareCombatRouteHandoff}>
-              <Swords className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">Combat</span>
-            </Link>
-          ) : null}
-          </div>
-        </div>
-
-        {/* Right: account + DM */}
-        <div className="flex items-center gap-1 shrink-0">
-          {/* Account button - always visible */}
+          <div className="w-px h-5 mx-1" style={{background: 'rgba(255,255,255,0.1)'}} />
+          {/* Account button */}
           <div className="relative" ref={accountRef}>
             <button
               className="flex items-center gap-1.5 px-1.5 sm:px-2.5 py-1.5 rounded transition-colors hover:bg-white/5"
@@ -2623,20 +2624,19 @@ export default function Home() {
             ) : null}
           </div>
           {/* DM Avatar */}
-          <button className="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/5 transition-colors" onClick={() => setIsDmPanelOpen((o) => !o)} type="button">
-            <div className="relative">
-              <div className="w-8 h-8 rounded-full overflow-hidden border-2" style={{borderColor: 'rgba(212,175,55,0.4)'}}>
+          <button className="flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-white/5 transition-colors ml-1" onClick={() => setIsDmPanelOpen((o) => !o)} type="button">
+            <div className="relative shrink-0">
+              <div className="w-7 h-7 rounded-full overflow-hidden border" style={{borderColor: 'rgba(212,175,55,0.4)'}}>
                 <div className="w-full h-full bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center">
-                  <Bot className="w-4 h-4 text-slate-300" />
+                  <Bot className="w-3.5 h-3.5 text-slate-300" />
                 </div>
               </div>
-              <div className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-green-400 border border-black" />
+              <div className="absolute bottom-0 right-0 w-1.5 h-1.5 rounded-full bg-green-400 border border-black" />
             </div>
             <div className="text-left hidden sm:block">
-              <p className="text-[0.65rem] font-bold font-cinzel text-white leading-none">Spielmeister</p>
-              <p className="text-[0.58rem] font-cinzel text-slate-400 leading-none mt-0.5 tracking-wider">DM</p>
+              <p className="text-[0.6rem] font-bold font-cinzel text-white leading-none">Spielmeister</p>
+              <p className="text-[0.55rem] font-cinzel text-slate-400 leading-none mt-0.5">DM</p>
             </div>
-            <ChevronDown className="w-3 h-3 text-slate-500" />
           </button>
         </div>
 
@@ -2900,9 +2900,7 @@ export default function Home() {
                   <button className="text-slate-600 hover:text-slate-400 transition-colors" onClick={() => setIsDmPanelOpen((o) => !o)} type="button">
                     <MessageSquare className="w-4 h-4" />
                   </button>
-                  <button className="text-slate-600 hover:text-slate-400 transition-colors" type="button">
-                    <UserPlus className="w-4 h-4" />
-                  </button>
+
                   <button className="transition-colors" onClick={toggleMusic} title={musicPlaying ? "Musik pausieren" : "Musik abspielen"} type="button" style={{color: musicPlaying ? '#d4af37' : undefined}}>
                     <Music className="w-4 h-4" />
                   </button>

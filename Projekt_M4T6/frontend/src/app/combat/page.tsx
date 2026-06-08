@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowLeft, Swords, Skull, Shield, Zap, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   type CombatAttackFlowState,
@@ -14,110 +15,58 @@ import {
   readCombatRouteStateSnapshot,
 } from "@/lib/combatState";
 
+const GOLD = "#d4af37";
+const GOLD_DIM = "rgba(212,175,55,0.7)";
+
 export default function CombatPage() {
-  const [combatRoundState, setCombatRoundState] = useState<CombatRoundState>(
-    createInitialCombatRoundState,
-  );
-  const [combatAttackFlowState, setCombatAttackFlowState] =
-    useState<CombatAttackFlowState>(
-      createInitialCombatAttackFlowState,
-    );
-  const [selectedCombatTargetId, setSelectedCombatTargetId] = useState<
-    string | null
-  >(null);
+  const [combatRoundState, setCombatRoundState] = useState<CombatRoundState>(createInitialCombatRoundState);
+  const [combatAttackFlowState, setCombatAttackFlowState] = useState<CombatAttackFlowState>(createInitialCombatAttackFlowState);
+  const [selectedCombatTargetId, setSelectedCombatTargetId] = useState<string | null>(null);
   const [combatStatus, setCombatStatus] = useState("Combat-Screen bereit.");
-  const [combatLogEntries, setCombatLogEntries] = useState<CombatLogEntry[]>(
-    [],
-  );
+  const [combatLogEntries, setCombatLogEntries] = useState<CombatLogEntry[]>([]);
+
   const visibleInitiativeOrder = combatRoundState.initiativeOrder;
-  const activeCombatActor = visibleInitiativeOrder.find(
-    (actor) => actor.id === combatRoundState.activeActorId,
-  );
-  const availableCombatTargets =
-    combatRoundState.turnControl?.availableTargets ?? [];
-  const combatTargetOptions =
-    availableCombatTargets.length > 0
-      ? availableCombatTargets
-      : combatRoundState.enemies.map((enemy) => ({
-          id: enemy.id,
-          name: enemy.name,
-          currentHp: enemy.currentHp,
-          maxHp: enemy.maxHp,
-          ac: enemy.ac,
-          speed: enemy.speed,
-          defeated: enemy.currentHp <= 0,
-        }));
+  const activeCombatActor = visibleInitiativeOrder.find((actor) => actor.id === combatRoundState.activeActorId);
+  const availableCombatTargets = combatRoundState.turnControl?.availableTargets ?? [];
+  const combatTargetOptions = availableCombatTargets.length > 0
+    ? availableCombatTargets
+    : combatRoundState.enemies.map((enemy) => ({
+        id: enemy.id, name: enemy.name, currentHp: enemy.currentHp,
+        maxHp: enemy.maxHp, ac: enemy.ac, speed: enemy.speed, defeated: enemy.currentHp <= 0,
+      }));
   const selectedCombatTarget = useMemo(
-    () =>
-      combatTargetOptions.find(
-        (target) => target.id === selectedCombatTargetId,
-      ) ?? null,
+    () => combatTargetOptions.find((target) => target.id === selectedCombatTargetId) ?? null,
     [combatTargetOptions, selectedCombatTargetId],
   );
   const getCombatActorName = (actorId?: string | null) =>
     getCombatActorDisplayName(actorId, visibleInitiativeOrder, (combatActorId) => {
-      const enemy = combatRoundState.enemies.find(
-        (item) => item.id === combatActorId,
-      );
-      const target = combatTargetOptions.find(
-        (item) => item.id === combatActorId,
-      );
-
+      const enemy = combatRoundState.enemies.find((item) => item.id === combatActorId);
+      const target = combatTargetOptions.find((item) => item.id === combatActorId);
       return enemy?.name ?? target?.name ?? null;
     });
   const lastCombatResolution = combatRoundState.lastResolution;
   const lastCombatAttack = lastCombatResolution?.attack ?? null;
   const lastCombatDamage = lastCombatResolution?.damage ?? null;
   const lastCombatHp = lastCombatResolution?.hp ?? null;
-  const allKnownEnemiesDefeated =
-    combatRoundState.enemies.length > 0 &&
-    combatRoundState.enemies.every((enemy) => enemy.currentHp <= 0);
-  const allTargetOptionsDefeated =
-    combatTargetOptions.length > 0 &&
-    combatTargetOptions.every(
-      (target) => target.defeated === true || (target.currentHp ?? 1) <= 0,
-    );
-  const isCombatFinished =
-    lastCombatResolution?.combatFinished === true ||
-    allKnownEnemiesDefeated ||
-    allTargetOptionsDefeated;
-  const lastAttackFeedback =
-    lastCombatResolution && lastCombatAttack
-      ? {
-          actorName: getCombatActorName(lastCombatResolution.actorId),
-          targetName: getCombatActorName(lastCombatResolution.targetId),
-          total: lastCombatAttack.total ?? "?",
-          targetAc: lastCombatAttack.targetAc ?? "?",
-          hit: lastCombatAttack.hit === true,
-          nat20: lastCombatAttack.nat20 === true,
-          nat1: lastCombatAttack.nat1 === true,
-          critical: lastCombatAttack.critical === true,
-          damage: lastCombatDamage?.total ?? 0,
-          remainingHp: lastCombatHp?.remainingHp ?? null,
-        }
-      : null;
-  const attackFeedbackLabel = lastAttackFeedback?.nat20
-    ? "Nat 20"
-    : lastAttackFeedback?.nat1
-      ? "Nat 1"
-      : lastAttackFeedback?.hit
-        ? "Treffer"
-        : "Verfehlt";
-  const attackFeedbackTone = lastAttackFeedback?.nat20
-    ? "border-emerald-300/60 bg-emerald-500/15 text-emerald-50"
-    : lastAttackFeedback?.nat1
-      ? "border-red-300/60 bg-red-500/15 text-red-50"
-      : lastAttackFeedback?.hit
-        ? "border-ember-300/55 bg-ember-500/15 text-ember-50"
-        : "border-slate-400/30 bg-white/[0.06] text-slate-100";
+  const allKnownEnemiesDefeated = combatRoundState.enemies.length > 0 && combatRoundState.enemies.every((e) => e.currentHp <= 0);
+  const allTargetOptionsDefeated = combatTargetOptions.length > 0 && combatTargetOptions.every((t) => t.defeated === true || (t.currentHp ?? 1) <= 0);
+  const isCombatFinished = lastCombatResolution?.combatFinished === true || allKnownEnemiesDefeated || allTargetOptionsDefeated;
+  const lastAttackFeedback = lastCombatResolution && lastCombatAttack ? {
+    actorName: getCombatActorName(lastCombatResolution.actorId),
+    targetName: getCombatActorName(lastCombatResolution.targetId),
+    total: lastCombatAttack.total ?? "?",
+    targetAc: lastCombatAttack.targetAc ?? "?",
+    hit: lastCombatAttack.hit === true,
+    nat20: lastCombatAttack.nat20 === true,
+    nat1: lastCombatAttack.nat1 === true,
+    damage: lastCombatDamage?.total ?? 0,
+    remainingHp: lastCombatHp?.remainingHp ?? null,
+  } : null;
+  const attackFeedbackLabel = lastAttackFeedback?.nat20 ? "Nat 20" : lastAttackFeedback?.nat1 ? "Nat 1" : lastAttackFeedback?.hit ? "Treffer" : "Verfehlt";
 
   useEffect(() => {
     const snapshot = readCombatRouteStateSnapshot();
-
-    if (!snapshot) {
-      return;
-    }
-
+    if (!snapshot) return;
     setCombatRoundState(snapshot.roundState);
     setCombatAttackFlowState(snapshot.attackFlowState);
     setSelectedCombatTargetId(snapshot.selectedTargetId);
@@ -126,345 +75,250 @@ export default function CombatPage() {
   }, []);
 
   const advanceCombatTurn = () => {
-    if (isCombatFinished) {
-      setCombatStatus("Kampf beendet. Rueckkehr zur Story ist vorbereitet.");
-      return;
-    }
-
+    if (isCombatFinished) { setCombatStatus("Kampf beendet."); return; }
     setCombatRoundState((currentState) => {
       const advanceResult = advanceCombatTurnState(currentState);
-
-      if (!advanceResult) {
-        setCombatStatus("Kein Turn-Wechsel moeglich: Initiative fehlt.");
-        return currentState;
-      }
-
+      if (!advanceResult) { setCombatStatus("Kein Turn-Wechsel möglich."); return currentState; }
       setSelectedCombatTargetId(null);
       setCombatAttackFlowState(advanceResult.attackFlowState);
-      const nextActorName = getCombatActorDisplayName(
-        advanceResult.roundState.activeActorId,
-        advanceResult.roundState.initiativeOrder,
-      );
+      const nextActorName = getCombatActorDisplayName(advanceResult.roundState.activeActorId, advanceResult.roundState.initiativeOrder);
       const nextStatus = advanceResult.isNewRound
         ? `Runde ${advanceResult.roundState.round} startet. ${nextActorName} ist am Zug.`
         : `${nextActorName} ist am Zug.`;
-
       setCombatStatus(nextStatus);
-      setCombatLogEntries((entries) => [
-        {
-          id: `${Date.now()}-${advanceResult.roundState.round}-${advanceResult.roundState.turnIndex}`,
-          title: advanceResult.isNewRound
-            ? `Runde ${advanceResult.roundState.round} startet`
-            : "Naechster Turn",
-          detail: `${nextActorName} ist am Zug.`,
-        },
-        ...entries,
-      ]);
-
+      setCombatLogEntries((entries) => [{
+        id: `${Date.now()}-${advanceResult.roundState.round}-${advanceResult.roundState.turnIndex}`,
+        title: advanceResult.isNewRound ? `Runde ${advanceResult.roundState.round} startet` : "Nächster Turn",
+        detail: `${nextActorName} ist am Zug.`,
+      }, ...entries]);
       return advanceResult.roundState;
     });
   };
 
   return (
-    <main className="bg-ink-950 px-4 py-5 text-slate-50 overflow-y-auto" style={{maxHeight: '100dvh'}}>
-      <section className="mx-auto w-full max-w-6xl flex flex-col gap-4">
-        <div className="flex items-center gap-3 mb-2">
-          <Link
-            href="/"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold text-slate-300 hover:text-white hover:bg-white/10 transition-colors border border-white/10"
-          >
-            ← Zurück
-          </Link>
+    <div className="min-h-dvh flex flex-col text-white" style={{background: "#050505"}}>
+      {/* Header */}
+      <header className="flex-none h-14 flex items-center px-4 gap-3 border-b border-white/[0.08]" style={{background: "rgba(8,8,8,0.97)", backdropFilter: "blur(20px)"}}>
+        <Link href="/" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[0.65rem] font-bold font-cinzel uppercase tracking-wide text-slate-400 hover:text-white hover:bg-white/10 transition-colors">
+          <ArrowLeft className="w-3.5 h-3.5" />
+          Zurück
+        </Link>
+        <div className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-2 pointer-events-none">
+          <div className="w-12 h-px" style={{background: "linear-gradient(90deg, transparent, rgba(212,175,55,0.5))"}} />
+          <div className="w-1.5 h-1.5 rotate-45" style={{background: GOLD, opacity: 0.7}} />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-eagle.png" alt="Falkenwacht" width={20} height={20} className="object-contain opacity-90" />
+          <span className="text-sm font-bold tracking-widest font-cinzel" style={{color: GOLD}}>Falkenwacht</span>
+          <div className="w-1.5 h-1.5 rotate-45" style={{background: GOLD, opacity: 0.7}} />
+          <div className="w-12 h-px" style={{background: "linear-gradient(90deg, rgba(212,175,55,0.5), transparent)"}} />
         </div>
-        <header className="rounded-md border border-white/10 bg-white/[0.05] p-4">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-ember-300">
-            Falkenwacht Combat
-          </p>
-          <h1 className="mt-2 text-2xl font-black">Combat-Screen</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-300">
-            Diese Route ist vorbereitet, damit Kampfszenen kuenftig getrennt vom
-            Story-Screen aufgebaut werden koennen.
-          </p>
-        </header>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[0.65rem] font-bold font-cinzel uppercase tracking-wide border" style={{color: "#fca5a5", borderColor: "rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.08)"}}>
+            <Swords className="w-3 h-3" /> Kampf
+          </span>
+        </div>
+      </header>
 
-        <div className="grid flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
-          <section className="rounded-md border border-white/10 bg-black/25 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
-              Kampfflaeche
-            </p>
-            <div className="mt-3 grid min-h-80 rounded-md border border-dashed border-white/15 bg-white/[0.03] p-4">
-              <div className="grid h-full place-items-center text-center text-sm text-slate-400">
-                Combat-Bild, Battle-Map oder taktische Ansicht werden hier
-                ausgelagert.
-              </div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                {combatRoundState.enemies.map((enemy) => (
-                  <article
-                    className="rounded-md border border-red-400/30 bg-red-500/10 p-3"
-                    key={enemy.id}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h2 className="text-sm font-black text-red-50">
-                          {enemy.name}
-                        </h2>
-                        <p className="mt-1 text-xs text-slate-300">
-                          AC {enemy.ac} | Speed {enemy.speed} ft.
-                        </p>
-                      </div>
-                      <span className="rounded border border-white/10 bg-black/30 px-2 py-1 text-xs font-black text-slate-100">
-                        {enemy.currentHp}/{enemy.maxHp} HP
-                      </span>
-                    </div>
-                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/40">
-                      <div
-                        className="h-full rounded-full bg-red-300"
-                        style={{
-                          width: `${Math.max(
-                            0,
-                            Math.min(100, (enemy.currentHp / enemy.maxHp) * 100),
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                  </article>
-                ))}
-              </div>
+      {/* Main */}
+      <main className="flex-1 px-4 py-6 sm:px-6">
+        <div className="mx-auto max-w-5xl flex flex-col gap-5">
+
+          {/* Combat Finished */}
+          {isCombatFinished && (
+            <div className="rounded-lg p-5 text-center" style={{background: "rgba(16,24,8,0.9)", border: "1px solid rgba(134,239,172,0.3)"}}>
+              <p className="text-[0.6rem] font-cinzel uppercase tracking-[0.25em] text-green-400">Sieg</p>
+              <h2 className="mt-1 text-xl font-bold font-cinzel text-green-300">Kampf abgeschlossen</h2>
+              <Link href="/" className="mt-4 inline-flex items-center gap-2 px-5 py-2 rounded-md text-sm font-bold font-cinzel uppercase tracking-wide transition-all" style={{background: "rgba(212,175,55,0.15)", border: "1px solid rgba(212,175,55,0.4)", color: GOLD}}>
+                Zur Story zurückkehren <ChevronRight className="w-4 h-4" />
+              </Link>
             </div>
-          </section>
+          )}
 
-          <aside className="rounded-md border border-white/10 bg-ink-950/80 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-ember-300">
-              Combat-Panel
-            </p>
-            {isCombatFinished ? (
-              <div className="mt-3 rounded-md border border-emerald-300/45 bg-emerald-500/15 p-3">
-                <p className="text-sm font-black text-emerald-50">
-                  Kampf abgeschlossen
-                </p>
-                <p className="mt-1 text-xs leading-relaxed text-emerald-100/85">
-                  Alle bekannten Gegner sind besiegt oder das Backend hat den
-                  Encounter als beendet markiert. Die Rueckkehr zur Story ist
-                  vorbereitet.
-                </p>
-                <Link
-                  className="mt-3 inline-flex w-full items-center justify-center rounded-md border border-emerald-200/40 bg-emerald-400 px-3 py-2 text-xs font-black text-ink-950 transition hover:bg-emerald-300"
-                  href="/"
-                >
-                  Zur Story zurueckkehren
-                </Link>
+          <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+            {/* Left: Initiative + Enemies */}
+            <div className="flex flex-col gap-4">
+
+              {/* Round info */}
+              <div className="rounded-lg p-4" style={{background: "rgba(10,8,5,0.85)", border: "1px solid rgba(212,175,55,0.18)"}}>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[0.6rem] font-cinzel uppercase tracking-[0.2em]" style={{color: GOLD_DIM}}>Kampfrunde</p>
+                    <p className="text-2xl font-bold font-cinzel mt-0.5" style={{color: GOLD}}>{combatRoundState.round || "-"}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[0.6rem] font-cinzel uppercase tracking-[0.2em] text-slate-500">Am Zug</p>
+                    <p className="text-base font-bold text-slate-100 mt-0.5">{activeCombatActor?.name ?? "Wartet..."}</p>
+                    <p className="text-[0.6rem] text-slate-500 mt-0.5">Zug {combatRoundState.turnIndex + 1}/{Math.max(visibleInitiativeOrder.length, 1)}</p>
+                  </div>
+                </div>
+                {/* Initiative order */}
+                {visibleInitiativeOrder.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {visibleInitiativeOrder.map((actor) => (
+                      <span key={actor.id} className="px-2 py-0.5 rounded text-[0.6rem] font-bold font-cinzel uppercase" style={{
+                        background: actor.id === combatRoundState.activeActorId ? "rgba(212,175,55,0.2)" : "rgba(255,255,255,0.04)",
+                        border: actor.id === combatRoundState.activeActorId ? "1px solid rgba(212,175,55,0.5)" : "1px solid rgba(255,255,255,0.08)",
+                        color: actor.id === combatRoundState.activeActorId ? GOLD : "#94a3b8",
+                      }}>
+                        {actor.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-            ) : null}
-            <div className="mt-3 space-y-2 text-sm text-slate-300">
-              <div className="rounded-md border border-white/10 bg-black/25 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
-                    Runde {combatRoundState.round}
+
+              {/* Enemies */}
+              {combatRoundState.enemies.length > 0 && (
+                <div className="rounded-lg p-4" style={{background: "rgba(10,8,5,0.85)", border: "1px solid rgba(212,175,55,0.18)"}}>
+                  <p className="text-[0.6rem] font-cinzel uppercase tracking-[0.2em] mb-3" style={{color: GOLD_DIM}}>
+                    <Skull className="w-3 h-3 inline mr-1.5" />Gegner
                   </p>
-                  <span className="rounded border border-ember-400/40 bg-ember-500/10 px-2 py-1 text-xs font-black text-ember-100">
-                    Zug {combatRoundState.turnIndex + 1}/
-                    {Math.max(visibleInitiativeOrder.length, 1)}
-                  </span>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {combatRoundState.enemies.map((enemy) => {
+                      const hpPct = Math.max(0, Math.min(100, (enemy.currentHp / enemy.maxHp) * 100));
+                      const defeated = enemy.currentHp <= 0;
+                      return (
+                        <div key={enemy.id} className="rounded-md p-3" style={{background: defeated ? "rgba(255,255,255,0.02)" : "rgba(180,30,30,0.08)", border: defeated ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(239,68,68,0.2)", opacity: defeated ? 0.5 : 1}}>
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm font-bold text-slate-100">{enemy.name}</p>
+                            <span className="text-[0.6rem] font-bold px-1.5 py-0.5 rounded shrink-0" style={{background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.25)", color: "#fca5a5"}}>
+                              {enemy.currentHp}/{enemy.maxHp} HP
+                            </span>
+                          </div>
+                          <p className="text-[0.6rem] text-slate-500 mt-0.5">AC {enemy.ac} · Speed {enemy.speed} ft.</p>
+                          <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{background: "rgba(0,0,0,0.4)"}}>
+                            <div className="h-full rounded-full transition-all" style={{width: `${hpPct}%`, background: hpPct > 50 ? "#86efac" : hpPct > 25 ? "#fbbf24" : "#f87171"}} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                <p className="mt-2 text-base font-black text-slate-100">
-                  {activeCombatActor?.name ?? "Wartet auf Initiative"}
-                </p>
-                <div className="mt-2 grid grid-cols-2 gap-1 text-xs">
-                  <span className="rounded border border-white/10 bg-black/25 px-2 py-1">
-                    Initiative: {visibleInitiativeOrder.length || "offen"}
-                  </span>
-                  <span className="rounded border border-white/10 bg-black/25 px-2 py-1">
-                    Ziel: {selectedCombatTarget?.name ?? "offen"}
-                  </span>
+              )}
+
+              {/* Last attack result */}
+              {lastAttackFeedback && (
+                <div className="rounded-lg p-4" style={{
+                  background: lastAttackFeedback.nat20 ? "rgba(16,24,8,0.9)" : lastAttackFeedback.nat1 ? "rgba(24,8,8,0.9)" : "rgba(10,8,5,0.85)",
+                  border: lastAttackFeedback.nat20 ? "1px solid rgba(134,239,172,0.3)" : lastAttackFeedback.nat1 ? "1px solid rgba(239,68,68,0.3)" : "1px solid rgba(212,175,55,0.2)",
+                }}>
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <p className="text-[0.6rem] font-cinzel uppercase tracking-[0.2em] text-slate-400">Letzter Wurf</p>
+                    <span className="px-2 py-0.5 rounded text-[0.65rem] font-bold font-cinzel uppercase" style={{
+                      background: lastAttackFeedback.nat20 ? "rgba(134,239,172,0.2)" : lastAttackFeedback.hit ? "rgba(212,175,55,0.2)" : "rgba(255,255,255,0.06)",
+                      color: lastAttackFeedback.nat20 ? "#86efac" : lastAttackFeedback.hit ? GOLD : "#94a3b8",
+                    }}>
+                      {attackFeedbackLabel}
+                    </span>
+                  </div>
+                  <p className="text-sm font-bold text-slate-200">{lastAttackFeedback.actorName} → {lastAttackFeedback.targetName}</p>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                    {[
+                      {label: "Angriff", value: lastAttackFeedback.total},
+                      {label: "AC", value: lastAttackFeedback.targetAc},
+                      {label: "Schaden", value: lastAttackFeedback.hit ? lastAttackFeedback.damage : 0},
+                    ].map(({label, value}) => (
+                      <div key={label} className="rounded p-2" style={{background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)"}}>
+                        <p className="text-[0.55rem] font-cinzel uppercase tracking-wide text-slate-500">{label}</p>
+                        <p className="text-lg font-bold font-cinzel mt-0.5" style={{color: GOLD}}>{value}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
+            </div>
 
-              <div className="rounded-md border border-white/10 bg-black/25 p-3">
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
-                  Ziel auswaehlen
-                </p>
-                <div className="mt-2 grid gap-1.5">
-                  {combatTargetOptions.map((target) => {
-                    const isSelected = selectedCombatTargetId === target.id;
-                    const currentHp = target.currentHp ?? 0;
-                    const maxHp = target.maxHp ?? 1;
-                    const hpPercent = Math.max(
-                      0,
-                      Math.min(100, (currentHp / maxHp) * 100),
-                    );
+            {/* Right: Actions + Log */}
+            <div className="flex flex-col gap-4">
 
-                    return (
-                      <button
-                        className={`rounded-md border px-2.5 py-2 text-left transition ${
-                          isSelected
-                            ? "border-ember-400 bg-ember-500/15"
-                            : "border-white/10 bg-white/[0.04] hover:border-ember-400/60 hover:bg-ember-500/10"
-                        } disabled:cursor-not-allowed disabled:opacity-45`}
-                        disabled={isCombatFinished || target.defeated === true}
-                        key={target.id}
-                        onClick={() => setSelectedCombatTargetId(target.id)}
-                        type="button"
-                      >
-                        <span className="flex items-center justify-between gap-2">
-                          <span className="min-w-0 text-sm font-black text-slate-50">
-                            {target.name}
-                          </span>
-                          <span className="shrink-0 rounded border border-white/10 bg-black/25 px-1.5 py-0.5 text-[0.65rem] font-black text-slate-100">
-                            AC {target.ac ?? "?"}
-                          </span>
-                        </span>
-                        <span className="mt-1 flex flex-wrap items-center gap-2 text-[0.68rem] text-slate-300">
-                          <span>
-                            HP {currentHp}/{maxHp}
-                          </span>
-                          <span>Speed {target.speed ?? "?"} ft.</span>
-                        </span>
-                        <span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-black/40">
-                          <span
-                            className="block h-full rounded-full bg-red-300"
-                            style={{ width: `${hpPercent}%` }}
-                          />
-                        </span>
-                      </button>
-                    );
-                  })}
+              {/* Target selection */}
+              {combatTargetOptions.length > 0 && (
+                <div className="rounded-lg p-4" style={{background: "rgba(10,8,5,0.85)", border: "1px solid rgba(212,175,55,0.18)"}}>
+                  <p className="text-[0.6rem] font-cinzel uppercase tracking-[0.2em] mb-3" style={{color: GOLD_DIM}}>
+                    <Shield className="w-3 h-3 inline mr-1.5" />Ziel wählen
+                  </p>
+                  <div className="flex flex-col gap-1.5">
+                    {combatTargetOptions.map((target) => {
+                      const isSelected = selectedCombatTargetId === target.id;
+                      const hpPct = Math.max(0, Math.min(100, ((target.currentHp ?? 0) / (target.maxHp ?? 1)) * 100));
+                      return (
+                        <button
+                          key={target.id}
+                          disabled={isCombatFinished || target.defeated === true}
+                          onClick={() => setSelectedCombatTargetId(target.id)}
+                          className="rounded-md p-2.5 text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                          style={{
+                            background: isSelected ? "rgba(212,175,55,0.12)" : "rgba(255,255,255,0.03)",
+                            border: isSelected ? "1px solid rgba(212,175,55,0.45)" : "1px solid rgba(255,255,255,0.08)",
+                          }}
+                          type="button"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-bold text-slate-100">{target.name}</span>
+                            <span className="text-[0.6rem] font-bold shrink-0" style={{color: "#94a3b8"}}>AC {target.ac ?? "?"}</span>
+                          </div>
+                          <p className="text-[0.6rem] text-slate-500 mt-0.5">HP {target.currentHp}/{target.maxHp}</p>
+                          <div className="mt-1.5 h-1 rounded-full overflow-hidden" style={{background: "rgba(0,0,0,0.4)"}}>
+                            <div className="h-full rounded-full" style={{width: `${hpPct}%`, background: "#f87171"}} />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div className="rounded-md border border-white/10 bg-black/25 p-2.5">
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
-                  Flow
+              {/* Flow + Status + Advance */}
+              <div className="rounded-lg p-4" style={{background: "rgba(10,8,5,0.85)", border: "1px solid rgba(212,175,55,0.18)"}}>
+                <p className="text-[0.6rem] font-cinzel uppercase tracking-[0.2em] mb-3" style={{color: GOLD_DIM}}>
+                  <Zap className="w-3 h-3 inline mr-1.5" />Aktionsfluss
                 </p>
-                <div className="mt-2 grid grid-cols-3 gap-1 text-center text-[0.58rem] font-black uppercase tracking-[0.08em]">
+                <div className="grid grid-cols-3 gap-1 text-center mb-3">
                   {["Aktion", "Ziel", "Roll"].map((step, index) => (
-                    <span
-                      className={`rounded border px-1 py-1 ${
-                        combatAttackFlowState.step === "idle" && index === 0
-                          ? "border-ember-400/60 bg-ember-500 text-ink-950"
-                          : "border-white/10 bg-white/[0.06] text-slate-400"
-                      }`}
-                      key={step}
-                    >
+                    <span key={step} className="rounded py-1 text-[0.58rem] font-bold font-cinzel uppercase tracking-wide" style={{
+                      background: combatAttackFlowState.step === "idle" && index === 0 ? "rgba(212,175,55,0.2)" : "rgba(255,255,255,0.04)",
+                      border: combatAttackFlowState.step === "idle" && index === 0 ? "1px solid rgba(212,175,55,0.45)" : "1px solid rgba(255,255,255,0.08)",
+                      color: combatAttackFlowState.step === "idle" && index === 0 ? GOLD : "#64748b",
+                    }}>
                       {index + 1} {step}
                     </span>
                   ))}
                 </div>
-                <p className="mt-2 rounded border border-white/10 bg-black/30 px-2 py-1.5 text-[0.68rem] text-slate-300">
-                  {combatFlowStepCopy[combatAttackFlowState.step]}
-                </p>
-                <p className="mt-2 rounded border border-emerald-400/25 bg-emerald-500/10 px-2 py-1.5 text-xs font-bold text-emerald-100">
+                <p className="text-xs text-slate-400 mb-2 px-1">{combatFlowStepCopy[combatAttackFlowState.step]}</p>
+                <p className="text-xs font-semibold px-2 py-1.5 rounded mb-3" style={{background: "rgba(134,239,172,0.08)", border: "1px solid rgba(134,239,172,0.15)", color: "#86efac"}}>
                   {combatStatus}
                 </p>
                 <button
-                  className="mt-2 w-full rounded-md border border-ember-400/45 bg-ember-500 px-3 py-2 text-[0.7rem] font-black text-ink-950 transition hover:bg-ember-400 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.06] disabled:text-slate-500"
-                  disabled={
-                    isCombatFinished ||
-                    combatAttackFlowState.step !== "turnResolved" ||
-                    visibleInitiativeOrder.length === 0
-                  }
+                  disabled={isCombatFinished || combatAttackFlowState.step !== "turnResolved" || visibleInitiativeOrder.length === 0}
                   onClick={advanceCombatTurn}
+                  className="w-full rounded-md py-2.5 text-xs font-bold font-cinzel uppercase tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{background: "rgba(212,175,55,0.15)", border: "1px solid rgba(212,175,55,0.4)", color: GOLD}}
                   type="button"
                 >
-                  Naechsten Turn vorbereiten
+                  Nächsten Turn vorbereiten
                 </button>
               </div>
 
-              {lastAttackFeedback ? (
-                <div
-                  className={`rounded-md border p-2.5 ${attackFeedbackTone}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-300">
-                        Letzter Wurf
-                      </p>
-                      <p className="mt-1 text-sm font-black text-slate-50">
-                        {lastAttackFeedback.actorName} gegen{" "}
-                        {lastAttackFeedback.targetName}
-                      </p>
-                    </div>
-                    <span className="shrink-0 rounded bg-ember-500 px-2 py-1 text-xs font-black text-ink-950">
-                      {attackFeedbackLabel}
-                    </span>
-                  </div>
-                  <div className="mt-2 grid grid-cols-3 gap-1 text-center">
-                    <span className="rounded border border-white/10 bg-black/25 px-2 py-1">
-                      <span className="block text-[0.55rem] font-bold uppercase tracking-[0.1em] text-slate-400">
-                        Attack
-                      </span>
-                      <span className="text-sm font-black">
-                        {lastAttackFeedback.total}
-                      </span>
-                    </span>
-                    <span className="rounded border border-white/10 bg-black/25 px-2 py-1">
-                      <span className="block text-[0.55rem] font-bold uppercase tracking-[0.1em] text-slate-400">
-                        AC
-                      </span>
-                      <span className="text-sm font-black">
-                        {lastAttackFeedback.targetAc}
-                      </span>
-                    </span>
-                    <span className="rounded border border-white/10 bg-black/25 px-2 py-1">
-                      <span className="block text-[0.55rem] font-bold uppercase tracking-[0.1em] text-slate-400">
-                        Schaden
-                      </span>
-                      <span className="text-sm font-black">
-                        {lastAttackFeedback.hit ? lastAttackFeedback.damage : 0}
-                      </span>
-                    </span>
-                  </div>
-                  <p className="mt-2 rounded border border-white/10 bg-black/25 px-2 py-1.5 text-[0.68rem] font-bold text-slate-100">
-                    {lastAttackFeedback.nat20
-                      ? "Kritischer Treffer. Damage Roll wird besonders markiert."
-                      : lastAttackFeedback.nat1
-                        ? "Kritischer Fehlschlag. Kein Damage Roll."
-                        : lastAttackFeedback.hit
-                          ? `Treffer. HP danach: ${
-                              lastAttackFeedback.remainingHp ?? "unbekannt"
-                            }.`
-                          : "Verfehlt. Kein Damage Roll."}
-                  </p>
-                </div>
-              ) : null}
-
-              <div className="rounded-md border border-white/10 bg-black/25 p-3">
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
-                  Combat-Log
-                </p>
+              {/* Combat Log */}
+              <div className="rounded-lg p-4" style={{background: "rgba(10,8,5,0.85)", border: "1px solid rgba(212,175,55,0.18)"}}>
+                <p className="text-[0.6rem] font-cinzel uppercase tracking-[0.2em] mb-3" style={{color: GOLD_DIM}}>Combat-Log</p>
                 {combatLogEntries.length > 0 ? (
-                  <div className="mt-2 max-h-44 space-y-2 overflow-y-auto pr-1">
+                  <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
                     {combatLogEntries.map((entry) => (
-                      <article
-                        className="rounded border border-white/10 bg-white/[0.04] px-2 py-1.5"
-                        key={entry.id}
-                      >
-                        <p className="font-black text-slate-100">
-                          {entry.title}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-400">
-                          {entry.detail}
-                        </p>
+                      <article key={entry.id} className="rounded p-2" style={{background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)"}}>
+                        <p className="text-xs font-bold text-slate-200">{entry.title}</p>
+                        <p className="text-[0.65rem] text-slate-500 mt-0.5">{entry.detail}</p>
                       </article>
                     ))}
                   </div>
                 ) : (
-                  <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                    Noch keine Combat-Ereignisse. Attack Roll, Damage Roll und
-                    Enemy Turn werden spaeter hier protokolliert.
-                  </p>
+                  <p className="text-xs text-slate-600">Noch keine Kampfereignisse.</p>
                 )}
               </div>
             </div>
-          </aside>
+          </div>
         </div>
-
-        <Link
-          className="inline-flex w-fit items-center rounded-md border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-slate-100 transition hover:border-ember-400/70 hover:bg-ember-500/15"
-          href="/"
-        >
-          {isCombatFinished ? "Zur Story zurueckkehren" : "Zurueck zum Story-Screen"}
-        </Link>
-      </section>
-    </main>
+      </main>
+    </div>
   );
 }
