@@ -2524,11 +2524,22 @@ export default function Home() {
         <div className="flex items-center gap-2 shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src='/logo-eagle.png' alt='Falkenwacht' width={28} height={28} style={{filter: 'drop-shadow(0 0 5px rgba(212,175,55,0.7))', objectFit: 'contain'}} />
-          <span className="text-sm font-bold tracking-widest font-cinzel hidden sm:block" style={{color: '#d4af37'}}>Falkenwacht</span>
         </div>
 
-        {/* Center: action buttons */}
-        <div className="flex items-center gap-0.5 mx-auto">
+        {/* Center: title + action buttons */}
+        <div className="flex-1 flex items-center justify-center gap-3">
+          {/* Title with decorative lines - hidden on mobile */}
+          <div className="hidden md:flex items-center gap-2">
+            <div className="w-10 h-px" style={{background: 'linear-gradient(90deg, transparent, rgba(212,175,55,0.5))'}} />
+            <div className="w-1 h-1 rotate-45" style={{background: '#d4af37', opacity: 0.7}} />
+            <h1 className="text-sm font-bold tracking-widest font-cinzel" style={{color: '#d4af37'}}>Falkenwacht</h1>
+            <div className="w-1 h-1 rotate-45" style={{background: '#d4af37', opacity: 0.7}} />
+            <div className="w-10 h-px" style={{background: 'linear-gradient(90deg, rgba(212,175,55,0.5), transparent)'}} />
+          </div>
+          {/* Divider */}
+          <div className="hidden md:block w-px h-5" style={{background: 'rgba(255,255,255,0.1)'}} />
+          {/* Action buttons */}
+          <div className="flex items-center gap-0.5">
           {([
             {icon: Dice5, label: 'Würfeln', onClick: () => setD20TriggerKey(k => k+1)},
             {icon: BookOpen, label: 'Regelwerk', onClick: () => setIsDmPanelOpen((o: boolean) => !o)},
@@ -2550,6 +2561,7 @@ export default function Home() {
               <span className="hidden sm:inline">Combat</span>
             </Link>
           ) : null}
+          </div>
         </div>
 
         {/* Right: account + DM */}
