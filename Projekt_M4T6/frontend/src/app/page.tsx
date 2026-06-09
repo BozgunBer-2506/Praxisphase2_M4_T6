@@ -1066,7 +1066,6 @@ export default function Home() {
           : visibleEvent.label ?? visibleEvent.type,
     });
     setRollAnimationKey((currentKey) => currentKey + 1);
-    setD20TriggerKey((k) => k + 1);
   };
 
   const mapEncounterActorKind = (
@@ -1913,6 +1912,7 @@ export default function Home() {
       if (!frontendState) {
         return;
       }
+      setD20TriggerKey((k) => k + 1);
 
       const attack = frontendState.lastResolution?.attack ?? null;
       const targetName = getCombatActorName(
@@ -2032,6 +2032,7 @@ export default function Home() {
       );
 
       setInventoryState(response.state.inventory);
+      setD20TriggerKey((k) => k + 1);
       applyFrontendEncounterState(response.frontend_state);
       setSelectedCombatTargetId(null);
       setCombatAttackFlowState((currentState) => ({
