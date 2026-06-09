@@ -36,6 +36,7 @@ export type EncounterInitiativeEntry = {
 
 export type EncounterParticipantState = {
   participant_id: string;
+  name?: string;
   side: "heroes" | "enemies";
   current_hp: number;
   max_hp: number;

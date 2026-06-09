@@ -78,6 +78,7 @@ def advance_turn(state: dict) -> dict:
                 "turn_index": next_index,
                 "active_participant_id": next_id,
                 "combat_finished": False,
+                "pending_damage": None,
             }
 
     return {**state, "active_participant_id": None, "combat_finished": True}
@@ -141,7 +142,10 @@ def resolve_encounter_attack_roll(state: dict, action: dict, roller=None) -> dic
     if state["combat_finished"]:
         raise ValueError("combat is already finished")
     if state.get("pending_damage"):
-        raise ValueError("pending damage must be resolved before another attack roll")
+        pending_actor = state["pending_damage"].get("actor_id")
+        if pending_actor == state.get("active_participant_id"):
+            raise ValueError("pending damage must be resolved before another attack roll")
+        state = {**state, "pending_damage": None}
     if action["action_type"] != "attack":
         raise ValueError(f"Unsupported encounter action '{action['action_type']}'")
     if action["actor_id"] != state["active_participant_id"]:

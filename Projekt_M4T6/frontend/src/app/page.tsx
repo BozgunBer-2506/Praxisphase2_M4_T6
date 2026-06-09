@@ -64,6 +64,7 @@ import {
 
 const SAVE_KEY = "falkenwacht.saveStates";
 const LAST_SAVE_KEY = "falkenwacht.lastSave";
+const COMBAT_STATE_KEY = "falkenwacht.combatState";
 const MAX_ACCOUNT_SAVES = 15;
 const MAX_CAMPAIGN_SAVES = 5;
 const CAMPAIGN_TITLE = "Falkenwacht - Die Korruption der Greifenstadt";
@@ -413,6 +414,7 @@ export default function Home() {
   const [musicPlaying, setMusicPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const userMutedRef = useRef(false);
+  const pendingCombatRollRef = useRef<{ roll: number; total: number; label: string } | null>(null);
   const [currentSceneId, setCurrentSceneId] = useState(initialSceneId);
   const [saveRestored, setSaveRestored] = useState(false);
   const [selectedCharacterId, setSelectedCharacterId] =
@@ -459,14 +461,40 @@ export default function Home() {
     Partial<Record<CharacterId, RollMode>>
   >({});
   const [initiativeOrder, setInitiativeOrder] = useState<InitiativeActor[]>([]);
-  const [combatRoundState, setCombatRoundState] = useState<CombatRoundState>(
-    createInitialCombatRoundState,
-  );
+  const [combatRoundState, setCombatRoundState] = useState<CombatRoundState>(() => {
+    if (typeof window === "undefined") return createInitialCombatRoundState();
+    try {
+      const saved = window.localStorage.getItem(COMBAT_STATE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as { roundState: CombatRoundState; attackFlowState: CombatAttackFlowState; selectedTargetId: string | null };
+        return parsed.roundState ?? createInitialCombatRoundState();
+      }
+    } catch { /* ignore */ }
+    return createInitialCombatRoundState();
+  });
   const [combatAttackFlowState, setCombatAttackFlowState] =
-    useState<CombatAttackFlowState>(createInitialCombatAttackFlowState);
-  const [selectedCombatTargetId, setSelectedCombatTargetId] = useState<string | null>(
-    null,
-  );
+    useState<CombatAttackFlowState>(() => {
+      if (typeof window === "undefined") return createInitialCombatAttackFlowState();
+      try {
+        const saved = window.localStorage.getItem(COMBAT_STATE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved) as { roundState: CombatRoundState; attackFlowState: CombatAttackFlowState; selectedTargetId: string | null };
+          return parsed.attackFlowState ?? createInitialCombatAttackFlowState();
+        }
+      } catch { /* ignore */ }
+      return createInitialCombatAttackFlowState();
+    });
+  const [selectedCombatTargetId, setSelectedCombatTargetId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const saved = window.localStorage.getItem(COMBAT_STATE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as { roundState: CombatRoundState; attackFlowState: CombatAttackFlowState; selectedTargetId: string | null };
+        return parsed.selectedTargetId ?? null;
+      }
+    } catch { /* ignore */ }
+    return null;
+  });
   const [isBackendTurnResolving, setIsBackendTurnResolving] = useState(false);
   const [initiativeStatus, setInitiativeStatus] = useState(
     "Initiative offen: Ryu und Ayane müssen würfeln.",
@@ -536,7 +564,7 @@ export default function Home() {
       noiseGain.connect(ctx.destination);
       noise.start(t);
       noise.stop(t + 0.055);
-      noise.onended = () => ctx.close();
+      noise.onended = () => { if (ctx.state !== "closed") ctx.close(); };
     } catch { /* audio not supported */ }
   }, []);
 
@@ -600,6 +628,16 @@ export default function Home() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [isAccountOpen]);
+
+  useEffect(() => {
+    if (combatRoundState.round > 0) {
+      window.localStorage.setItem(COMBAT_STATE_KEY, JSON.stringify({
+        roundState: combatRoundState,
+        attackFlowState: combatAttackFlowState,
+        selectedTargetId: selectedCombatTargetId,
+      }));
+    }
+  }, [combatRoundState, combatAttackFlowState, selectedCombatTargetId]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -697,6 +735,9 @@ export default function Home() {
   const activeCombatActor = visibleInitiativeOrder.find(
     (actor) => actor.id === combatRoundState.activeActorId,
   );
+  const isEnemyTurn = activeCombatActor
+    ? activeCombatActor.kind === "enemy"
+    : (combatRoundState.turnControl?.autoResolvable ?? false);
   const actorName = activeCharacter?.name ?? "Der Charakter";
   const getCombatActorName = (actorId?: string | null) =>
     getCombatActorDisplayName(actorId, visibleInitiativeOrder, (combatActorId) => {
@@ -737,8 +778,24 @@ export default function Home() {
           isEnemyAction: isLastResolutionEnemyAction,
         }
       : null;
-  const availableCombatTargets =
-    combatRoundState.turnControl?.availableTargets ?? [];
+  const availableCombatTargets = (() => {
+    const backendTargets = combatRoundState.turnControl?.availableTargets ?? [];
+    if (backendTargets.length > 0) return backendTargets;
+    return combatRoundState.enemies
+      .filter((e) => e.currentHp > 0)
+      .map((e) => ({
+        id: e.id,
+        participantId: e.id,
+        name: e.name,
+        kind: "enemy" as const,
+        side: "enemies" as const,
+        currentHp: e.currentHp,
+        maxHp: e.maxHp,
+        ac: e.ac,
+        speed: e.speed,
+        defeated: e.currentHp <= 0,
+      }));
+  })();
   const selectedCombatTarget =
     availableCombatTargets.find((target) => target.id === selectedCombatTargetId) ??
     null;
@@ -798,6 +855,7 @@ export default function Home() {
     ];
     const enemyParticipants = combatRoundState.enemies.map((enemy) => ({
       participant_id: enemy.id,
+      name: enemy.name,
       side: "enemies" as const,
       current_hp: enemy.currentHp,
       max_hp: enemy.maxHp,
@@ -1682,6 +1740,7 @@ export default function Home() {
 
       setInitiativeRolls({});
       setInitiativeOrder([]);
+      window.localStorage.removeItem(COMBAT_STATE_KEY);
       setCombatRoundState(createInitialCombatRoundState());
       setInitiativeStatus(
         advantageNames.length > 0
@@ -1912,6 +1971,14 @@ export default function Home() {
       if (!frontendState) {
         return;
       }
+      const attackResolution = frontendState.lastResolution?.attack;
+      if (attackResolution?.roll != null) {
+        pendingCombatRollRef.current = {
+          roll: attackResolution.roll,
+          total: attackResolution.total ?? attackResolution.roll,
+          label: "Angriffswurf",
+        };
+      }
       setD20TriggerKey((k) => k + 1);
 
       const attack = frontendState.lastResolution?.attack ?? null;
@@ -2010,8 +2077,6 @@ export default function Home() {
   const rollCombatDamage = async () => {
     if (
       !activeCombatActor ||
-      !combatAttackFlowState.targetId ||
-      !combatAttackFlowState.actionName ||
       !canResolveBackendDamageRoll ||
       isBackendTurnResolving
     ) {
@@ -2032,6 +2097,13 @@ export default function Home() {
       );
 
       setInventoryState(response.state.inventory);
+      if (damageTotal != null) {
+        pendingCombatRollRef.current = {
+          roll: resolution?.damage?.rolls?.[0] ?? damageTotal,
+          total: damageTotal,
+          label: "Schadenswurf",
+        };
+      }
       setD20TriggerKey((k) => k + 1);
       applyFrontendEncounterState(response.frontend_state);
       setSelectedCombatTargetId(null);
@@ -2223,14 +2295,12 @@ export default function Home() {
         return;
       }
 
-      const enemyInitiatives = [
-        {
-          id: "bandit",
-          name: "Schattenräuber",
-          kind: "enemy" as const,
-          roll: Math.floor(Math.random() * 20) + 1 + 2,
-        },
-      ];
+      const enemyInitiatives = createInitialCombatEnemies().map((enemy) => ({
+        id: enemy.id,
+        name: enemy.name,
+        kind: "enemy" as const,
+        roll: Math.floor(Math.random() * 20) + 1 + 2,
+      }));
       const orderedInitiativeActors = [
         ...(Object.entries(nextInitiativeRolls) as [CharacterId, number][]).map(
           ([characterId, total]) => ({
@@ -2566,7 +2636,7 @@ export default function Home() {
           <Link href="/login" className="hidden sm:flex px-2.5 py-1.5 text-[0.65rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors">
             Login
           </Link>
-          {isCombatScene ? (
+          {isCombatScene && combatRoundState.round === 0 ? (
             <Link href="/combat" className="hidden sm:flex px-2.5 py-1.5 text-[0.65rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] border border-red-400/40 bg-red-500/15 text-red-300 hover:border-red-300 transition-colors" onClick={prepareCombatRouteHandoff}>
               Combat
             </Link>
@@ -3831,9 +3901,9 @@ export default function Home() {
                   </p>
                   {combatRoundState.turnControl ? (
                     <p className="mt-1 text-[0.68rem] font-semibold text-slate-400">
-                      {combatRoundState.turnControl?.requiresPlayerAction
+                      {!isEnemyTurn
                         ? "Hero-Turn: Angriff bereit"
-                        : combatRoundState.turnControl?.autoResolvable
+                        : isEnemyTurn
                           ? "Enemy-Turn: Backend auto-resolve"
                           : "Turn wird vom Backend geprueft"}
                     </p>
@@ -3846,7 +3916,7 @@ export default function Home() {
                   >
                     {isBackendTurnResolving
                       ? "Backend rechnet..."
-                      : combatRoundState.turnControl?.autoResolvable
+                      : isEnemyTurn
                         ? "Enemy-Turn aufloesen"
                         : "Aktion abschliessen"}
                   </button>
@@ -4552,7 +4622,7 @@ export default function Home() {
                             return;
                           }
 
-                          if (combatRoundState.turnControl?.autoResolvable) {
+                          if (isEnemyTurn) {
                             void resolveBackendCombatTurn();
                             return;
                           }
@@ -4578,8 +4648,7 @@ export default function Home() {
                           : activeCombatActor?.kind === "enemy" &&
                               combatAttackFlowState.step === "turnResolved"
                             ? "Weiter zum naechsten Zug"
-                          : activeCombatActor?.kind === "enemy" ||
-                              combatRoundState.turnControl?.autoResolvable
+                          : isEnemyTurn
                             ? "DM-Gegnerzug auswerten"
                             : combatAttackFlowState.step === "chooseAction"
                               ? "Erst Aktion waehlen"
@@ -4767,6 +4836,23 @@ export default function Home() {
           currentValue={rollResult?.total ?? null}
           rollTrigger={d20TriggerKey}
           onRoll={(val) => {
+            const combat = pendingCombatRollRef.current;
+            if (combat) {
+              pendingCombatRollRef.current = null;
+              const result = {
+                diceType: 20,
+                rolls: [combat.roll],
+                selectedRoll: combat.roll,
+                modifier: combat.total - combat.roll,
+                total: combat.total,
+                mode: rollMode,
+                label: combat.label,
+              };
+              setRollResult(result);
+              setRollAnimationKey((k) => k + 1);
+              addGameLog({ title: combat.label, detail: `Wurf ${combat.roll} · Ergebnis ${combat.total}` });
+              return;
+            }
             const result = {
               diceType: 20,
               rolls: [val],
