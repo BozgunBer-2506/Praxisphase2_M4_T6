@@ -4778,7 +4778,6 @@ export default function Home() {
             };
             setRollResult(result);
             setRollAnimationKey((k) => k + 1);
-            setD20TriggerKey((k) => k + 1);
             addGameLog({ title: 'd20 gewürfelt', detail: `Ergebnis ${result.total}` });
           }}
         />
