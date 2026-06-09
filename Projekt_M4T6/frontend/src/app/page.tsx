@@ -1066,6 +1066,7 @@ export default function Home() {
           : visibleEvent.label ?? visibleEvent.type,
     });
     setRollAnimationKey((currentKey) => currentKey + 1);
+    setD20TriggerKey((k) => k + 1);
   };
 
   const mapEncounterActorKind = (
@@ -2115,6 +2116,7 @@ export default function Home() {
 
     setRollResult(result);
     setRollAnimationKey((currentKey) => currentKey + 1);
+    setD20TriggerKey((k) => k + 1);
     addGameLog({
       title: `${result.label} gewürfelt`,
       detail:
@@ -2175,6 +2177,7 @@ export default function Home() {
 
     setRollResult(result);
     setRollAnimationKey((currentKey) => currentKey + 1);
+    setD20TriggerKey((k) => k + 1);
     addGameLog({
       title: label,
       detail:
@@ -4274,7 +4277,7 @@ export default function Home() {
                           : actor.kind === "enemy"
                             ? {background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#fecaca'}
                             : {background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#e2e8f0'}}
-                        key={actor.id}
+                        key={`${actor.id}-${index}`}
                       >
                         <span className="grid size-6 place-items-center rounded border border-current/25 text-[0.65rem]">
                           {index + 1}
@@ -4774,6 +4777,7 @@ export default function Home() {
             };
             setRollResult(result);
             setRollAnimationKey((k) => k + 1);
+            setD20TriggerKey((k) => k + 1);
             addGameLog({ title: 'd20 gewürfelt', detail: `Ergebnis ${result.total}` });
           }}
         />
