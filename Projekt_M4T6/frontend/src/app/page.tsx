@@ -410,11 +410,14 @@ export default function Home() {
   const [username, setUsername] = useState<string | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const [isQuestLogOpen, setIsQuestLogOpen] = useState(true);
+  const [questLogExpanded, setQuestLogExpanded] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
   const [musicPlaying, setMusicPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const userMutedRef = useRef(false);
   const pendingCombatRollRef = useRef<{ roll: number; total: number; label: string } | null>(null);
+  const dmMessagesEndRef = useRef<HTMLDivElement>(null);
   const [currentSceneId, setCurrentSceneId] = useState(initialSceneId);
   const [saveRestored, setSaveRestored] = useState(false);
   const [selectedCharacterId, setSelectedCharacterId] =
@@ -2533,6 +2536,8 @@ export default function Home() {
       },
     ]);
     setDmInput("");
+    setIsDmPanelOpen(true);
+    setTimeout(() => dmMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
 
     try {
       const response = await askAiDmHelp({
@@ -2563,6 +2568,7 @@ export default function Home() {
           stateLocked: response.state_locked,
         },
       ]);
+      setTimeout(() => dmMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     } catch (error) {
       setDmMessages((messages) => [
         ...messages,
@@ -2630,10 +2636,26 @@ export default function Home() {
         <div className="flex items-center gap-1 shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src='/logo-eagle.png' alt='Falkenwacht' width={30} height={30} style={{filter: 'drop-shadow(0 0 6px rgba(212,175,55,0.7))', objectFit: 'contain', marginRight: '4px'}} />
-          <Link href="/campaigns" className="hidden sm:flex px-2.5 py-1.5 text-[0.65rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors">
+          <Link
+            href="/campaigns"
+            className="hidden sm:flex px-2.5 py-1.5 text-[0.65rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors"
+            onClick={(e) => {
+              if (combatRoundState.round > 0 && !window.confirm("Kampf läuft noch! Wirklich verlassen?")) {
+                e.preventDefault();
+              }
+            }}
+          >
             Kampagne
           </Link>
-          <Link href="/login" className="hidden sm:flex px-2.5 py-1.5 text-[0.65rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors">
+          <Link
+            href="/login"
+            className="hidden sm:flex px-2.5 py-1.5 text-[0.65rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors"
+            onClick={(e) => {
+              if (combatRoundState.round > 0 && !window.confirm("Kampf läuft noch! Wirklich verlassen?")) {
+                e.preventDefault();
+              }
+            }}
+          >
             Login
           </Link>
           {isCombatScene && combatRoundState.round === 0 ? (
@@ -2707,7 +2729,12 @@ export default function Home() {
                   <Link
                     className="flex items-center gap-2 w-full px-3 py-2 rounded text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
                     href="/campaigns"
-                    onClick={() => setIsAccountOpen(false)}
+                    onClick={(e) => {
+                      setIsAccountOpen(false);
+                      if (combatRoundState.round > 0 && !window.confirm("Kampf läuft noch! Wirklich verlassen?")) {
+                        e.preventDefault();
+                      }
+                    }}
                   >
                     <ScrollText className="w-4 h-4" />
                     Kampagnen & Speicherstände
@@ -3922,36 +3949,25 @@ export default function Home() {
                   </button>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {combatRoundState.enemies.map((enemy) => (
-                    <div
-                      className="rounded-md border border-red-400/30 bg-red-500/10 px-3 py-2"
-                      key={enemy.id}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-sm font-black text-red-100">
-                          {enemy.name}
-                        </p>
-                        <span className="rounded border border-white/10 bg-white/[0.06] px-2 py-1 text-[0.62rem] font-bold text-slate-200">
-                          AC {enemy.ac}
-                        </span>
+                <div className="flex flex-col gap-1">
+                  {combatRoundState.enemies.map((enemy) => {
+                    const hpPct = Math.max(0, Math.min(100, (enemy.currentHp / enemy.maxHp) * 100));
+                    const defeated = enemy.currentHp <= 0;
+                    return (
+                      <div
+                        className="flex items-center gap-2 rounded px-2 py-1.5"
+                        key={enemy.id}
+                        style={{background: defeated ? 'rgba(255,255,255,0.02)' : 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.15)', opacity: defeated ? 0.4 : 1}}
+                      >
+                        <p className="text-[0.68rem] font-bold text-red-200 w-28 truncate shrink-0">{enemy.name}</p>
+                        <div className="flex-1 h-1.5 rounded-full overflow-hidden bg-black/40">
+                          <div className="h-full rounded-full bg-red-400 transition-all" style={{width: `${hpPct}%`}} />
+                        </div>
+                        <span className="text-[0.6rem] text-slate-400 shrink-0">{enemy.currentHp}/{enemy.maxHp}</span>
+                        <span className="text-[0.6rem] text-slate-600 shrink-0">AC {enemy.ac}</span>
                       </div>
-                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-black/45">
-                        <div
-                          className="h-full rounded-full bg-red-400"
-                          style={{
-                            width: `${Math.max(
-                              0,
-                              Math.min(100, (enemy.currentHp / enemy.maxHp) * 100),
-                            )}%`,
-                          }}
-                        />
-                      </div>
-                      <p className="mt-1 text-[0.7rem] font-semibold text-slate-300">
-                        HP {enemy.currentHp}/{enemy.maxHp} · Speed {enemy.speed} ft.
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ) : null}
@@ -3975,7 +3991,7 @@ export default function Home() {
                   </button>
                 </div>
 
-                <div className="flex-1 space-y-2 overflow-y-auto p-3">
+                <div className="flex-1 space-y-2 overflow-y-auto p-3" ref={(el) => { if (el && dmMessages.length > 0) el.scrollTop = el.scrollHeight; }}>
                   {dmMessages.map((message) => (
                     <div
                       className={`rounded-md border p-2 text-sm leading-relaxed ${
@@ -4018,6 +4034,7 @@ export default function Home() {
                       ) : null}
                     </div>
                   ))}
+                  <div ref={dmMessagesEndRef} />
                 </div>
 
                 <div className="border-t border-white/10 p-3">
@@ -4786,44 +4803,55 @@ export default function Home() {
 
             {/* Quest-Log */}
             <div className="px-3 py-3 border-t border-white/[0.07] shrink-0">
-              <div className="flex items-center gap-1.5 mb-2.5">
+              <button
+                className="flex items-center gap-1.5 w-full mb-0 hover:opacity-80 transition-opacity"
+                onClick={() => setIsQuestLogOpen((o) => !o)}
+                type="button"
+              >
                 <div className="flex-1 h-px" style={{background: 'rgba(212,175,55,0.15)'}} />
                 <p className="text-[0.55rem] font-bold uppercase tracking-[0.28em] text-slate-500 font-cinzel">Quest-Log</p>
+                <ChevronDown className="w-3 h-3 text-slate-600 transition-transform" style={{transform: isQuestLogOpen ? 'rotate(0deg)' : 'rotate(-90deg)'}} />
                 <div className="flex-1 h-px" style={{background: 'rgba(212,175,55,0.15)'}} />
-              </div>
-              <div className="space-y-1.5">
-                {/* Active quest */}
-                <div className="rounded-lg p-2.5 flex items-start gap-2.5" style={{background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.2)'}}>
-                  <div className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center mt-0.5" style={{background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.3)'}}>
-                    <ScrollText className="w-3.5 h-3.5" style={{color: '#d4af37'}} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[0.7rem] font-bold text-white font-cinzel tracking-wide">Das gestohlene Ei</p>
-                    <p className="text-[0.58rem] text-slate-500 mt-0.5 leading-relaxed">Findet das gestohlene Ei, bevor es in falsche Hände gerät.</p>
-                  </div>
-                  <div className="shrink-0 w-2.5 h-2.5 rotate-45 mt-1" style={{background: '#d4af37', boxShadow: '0 0 5px rgba(212,175,55,0.5)'}} />
-                </div>
-                {/* Inactive quests */}
-                {[
-                  {icon: ShieldCheck, title: 'Intrigen in Falkenwacht', desc: 'Untersucht die politische Lage in der Stadt und gewinnt Verbündete.'},
-                  {icon: Swords, title: 'Der Schatten im Rat', desc: 'Findet Hinweise auf den Verräter im Rat der Vier.'},
-                ].map(({icon: Icon, title, desc}) => (
-                  <div className="rounded-lg p-2.5 flex items-start gap-2.5" key={title} style={{background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)'}}>
-                    <div className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center mt-0.5" style={{background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)'}}>
-                      <Icon className="w-3.5 h-3.5 text-slate-600" />
+              </button>
+              {isQuestLogOpen && (
+                <div className="mt-2.5 space-y-1.5">
+                  {/* Active quest */}
+                  <div className="rounded-lg p-2.5 flex items-start gap-2.5" style={{background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.2)'}}>
+                    <div className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center mt-0.5" style={{background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.3)'}}>
+                      <ScrollText className="w-3.5 h-3.5" style={{color: '#d4af37'}} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[0.7rem] font-bold text-slate-500 font-cinzel tracking-wide">{title}</p>
-                      <p className="text-[0.58rem] text-slate-700 mt-0.5 leading-relaxed">{desc}</p>
+                      <p className="text-[0.7rem] font-bold text-white font-cinzel tracking-wide">Das gestohlene Ei</p>
+                      <p className="text-[0.58rem] text-slate-500 mt-0.5 leading-relaxed">Findet das gestohlene Ei, bevor es in falsche Hände gerät.</p>
                     </div>
-                    <div className="shrink-0 w-3 h-3 rounded-full mt-1 border border-slate-700" />
+                    <div className="shrink-0 w-2.5 h-2.5 rotate-45 mt-1" style={{background: '#d4af37', boxShadow: '0 0 5px rgba(212,175,55,0.5)'}} />
                   </div>
-                ))}
-              </div>
-              <button className="mt-2 w-full flex items-center justify-center gap-1 py-1.5 text-[0.6rem] font-semibold text-slate-600 hover:text-slate-400 transition-colors border border-white/[0.06] rounded-lg hover:bg-white/5 font-cinzel uppercase tracking-wider" type="button">
-                Alle Quests anzeigen
-                <ChevronDown className="w-2.5 h-2.5" />
-              </button>
+                  {/* Inactive quests - shown when expanded */}
+                  {questLogExpanded && [
+                    {icon: ShieldCheck, title: 'Intrigen in Falkenwacht', desc: 'Untersucht die politische Lage in der Stadt und gewinnt Verbündete.'},
+                    {icon: Swords, title: 'Der Schatten im Rat', desc: 'Findet Hinweise auf den Verräter im Rat der Vier.'},
+                  ].map(({icon: Icon, title, desc}) => (
+                    <div className="rounded-lg p-2.5 flex items-start gap-2.5" key={title} style={{background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)'}}>
+                      <div className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center mt-0.5" style={{background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)'}}>
+                        <Icon className="w-3.5 h-3.5 text-slate-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[0.7rem] font-bold text-slate-500 font-cinzel tracking-wide">{title}</p>
+                        <p className="text-[0.58rem] text-slate-700 mt-0.5 leading-relaxed">{desc}</p>
+                      </div>
+                      <div className="shrink-0 w-3 h-3 rounded-full mt-1 border border-slate-700" />
+                    </div>
+                  ))}
+                  <button
+                    className="mt-1 w-full flex items-center justify-center gap-1 py-1.5 text-[0.6rem] font-semibold text-slate-600 hover:text-slate-400 transition-colors border border-white/[0.06] rounded-lg hover:bg-white/5 font-cinzel uppercase tracking-wider"
+                    onClick={() => setQuestLogExpanded((o) => !o)}
+                    type="button"
+                  >
+                    {questLogExpanded ? 'Weniger anzeigen' : 'Alle Quests anzeigen'}
+                    <ChevronDown className="w-2.5 h-2.5 transition-transform" style={{transform: questLogExpanded ? 'rotate(180deg)' : 'rotate(0deg)'}} />
+                  </button>
+                </div>
+              )}
             </div>
 
 
