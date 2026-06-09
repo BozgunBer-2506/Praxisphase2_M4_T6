@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import Session
 
@@ -470,6 +470,8 @@ class SaveGameRequest(BaseModel):
 
 
 class SaveGameResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     slot_name: str
     character_id: str
@@ -478,6 +480,8 @@ class SaveGameResponse(BaseModel):
 
 
 class SaveGameSummaryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     slot_name: str
     character_id: str

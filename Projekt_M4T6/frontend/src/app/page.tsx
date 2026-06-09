@@ -39,6 +39,7 @@ import {
   askAiDmHelp,
   createOrUpdateSave,
   getInventoryView,
+  listBackendSaves,
   resolveCombat,
   resolveSaveEncounterAttackRoll,
   resolveSaveEncounterAutoTurn,
@@ -631,6 +632,25 @@ export default function Home() {
     if (lastSaveState) {
       setCurrentSceneId(lastSaveState.sceneId);
       setSelectedCharacterId(lastSaveState.characterId);
+      setSaveRestored(true);
+      return;
+    }
+
+    if (isLoggedIn()) {
+      listBackendSaves()
+        .then((saves) => {
+          const autosave = saves.find((s) => s.slot_name === BACKEND_SLOT_NAME);
+          if (autosave && (autosave.character_id === "ryu" || autosave.character_id === "ayane")) {
+            const sceneId = scenes[autosave.scene_number - 1]?.id;
+            if (sceneId) {
+              setCurrentSceneId(sceneId);
+            }
+            setSelectedCharacterId(autosave.character_id as CharacterId);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setSaveRestored(true));
+      return;
     }
 
     setSaveRestored(true);
@@ -4113,23 +4133,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Story choices */}
-                {isLastDialogueLine && isDialogueFullyVisible && !isCombatScene && currentScene.choices.length > 0 ? (
-                  <div className="px-8 pb-4 space-y-1.5">
-                    {currentScene.choices.map((choice) => (
-                      <button
-                        className="w-full rounded px-4 py-2 text-left text-sm font-semibold text-slate-100 transition-all"
-                        key={choice.id}
-                        onClick={() => { playClickSound(); chooseAction(choice); }}
-                        style={{background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(201,168,76,0.25)', backdropFilter: 'blur(4px)'}}
-                        type="button"
-                      >
-                        <span className="mr-2" style={{color: '#d4af37'}}>›</span>
-                        {choice.label}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
               </div>
             ) : null}
                         </div>{/* close flex-1 relative */}
@@ -4189,13 +4192,6 @@ export default function Home() {
             ) : null}
 
             <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 space-y-3">
-              {/* Story choices */}
-              {!isCharacterSelection && !isCombatScene && isLastDialogueLine && isDialogueFullyVisible ? (
-                <div className="space-y-2">
-                  <p className="text-[0.55rem] uppercase tracking-[0.28em] text-slate-500 font-cinzel">Aktionen</p>
-                  {currentScene.choices.map((choice) => renderChoiceButton(choice))}
-                </div>
-              ) : null}
               {isCombatScene && visibleInitiativeOrder.length === 0 ? (
                 <div className="space-y-3 rounded-lg p-4" style={{background: 'rgba(212,175,55,0.05)', border: '1px solid rgba(212,175,55,0.18)'}}>
                   <div className="flex items-center gap-2">
@@ -4683,43 +4679,6 @@ export default function Home() {
                           )}
                         </div>
                       ) : null}
-                    </div>
-                  ) : null}
-                  {combatRoundState.round > 0 ? (
-                    <div className="grid gap-1.5">
-                      {combatRoundState.enemies.map((enemy) => (
-                        <div
-                          className="rounded-md border border-red-400/30 bg-red-500/10 px-2 py-2"
-                          key={enemy.id}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="truncate text-xs font-black text-red-100">
-                              {enemy.name}
-                            </p>
-                            <span className="rounded border border-white/10 bg-white/[0.06] px-2 py-1 text-[0.62rem] font-bold text-slate-200">
-                              AC {enemy.ac}
-                            </span>
-                          </div>
-                          <div className="mt-2 h-2 overflow-hidden rounded-full bg-black/45">
-                            <div
-                              className="h-full rounded-full bg-red-400"
-                              style={{
-                                width: `${Math.max(
-                                  0,
-                                  Math.min(
-                                    100,
-                                    (enemy.currentHp / enemy.maxHp) * 100,
-                                  ),
-                                )}%`,
-                              }}
-                            />
-                          </div>
-                          <p className="mt-1 text-[0.68rem] font-semibold text-slate-300">
-                            HP {enemy.currentHp}/{enemy.maxHp} | Speed{" "}
-                            {enemy.speed} ft.
-                          </p>
-                        </div>
-                      ))}
                     </div>
                   ) : null}
                 </div>
