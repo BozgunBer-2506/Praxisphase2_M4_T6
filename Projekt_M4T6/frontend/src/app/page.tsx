@@ -4527,8 +4527,7 @@ export default function Home() {
                           {combatStatus}
                         </p>
                       ) : null}
-                      {combatRoundState.turnControl?.requiresPlayerAction &&
-                      combatAttackFlowState.step === "chooseAction" ? (
+                      {(!isEnemyTurn && combatAttackFlowState.step === "chooseAction") ? (
                         <div className="mt-2 rounded-md border border-white/10 bg-black/30 p-2">
                           <p className="text-[0.62rem] font-bold uppercase tracking-[0.14em] font-cinzel" style={{color: 'rgba(212,175,55,0.8)'}}>
                             1. Aktion waehlen
@@ -4568,9 +4567,9 @@ export default function Home() {
                           </div>
                         </div>
                       ) : null}
-                      {combatRoundState.turnControl?.requiresPlayerAction &&
+                      {(!isEnemyTurn &&
                       (combatAttackFlowState.step === "chooseTarget" ||
-                        combatAttackFlowState.step === "awaitAttackRoll") ? (
+                        combatAttackFlowState.step === "awaitAttackRoll")) ? (
                         <div className="mt-2 rounded-md border border-white/10 bg-black/30 p-2">
                           <p className="text-[0.62rem] font-bold uppercase tracking-[0.14em] font-cinzel" style={{color: 'rgba(212,175,55,0.8)'}}>
                             2. Ziel waehlen
