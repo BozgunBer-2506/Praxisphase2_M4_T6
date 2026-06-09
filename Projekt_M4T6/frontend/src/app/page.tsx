@@ -68,7 +68,7 @@ const getAmbientAudio = () => {
   if (!_ambientAudio) {
     _ambientAudio = new Audio("/sounds/ambient.mp3");
     _ambientAudio.loop = true;
-    _ambientAudio.volume = 0.12;
+    _ambientAudio.volume = 0.15;
     _ambientAudio.playbackRate = 0.85;
   }
   return _ambientAudio;
@@ -810,12 +810,14 @@ export default function Home() {
   const selectedCombatTarget =
     availableCombatTargets.find((target) => target.id === selectedCombatTargetId) ??
     null;
-  const activeCombatSheet =
-    activeCombatActor?.kind === "player"
-      ? activeSheet
-      : activeCombatActor?.kind === "companion"
-        ? companionSheet
-        : null;
+  const activeCombatSheet = (() => {
+    if (!activeCombatActor) return null;
+    const isMainCharacter = activeCombatActor.id === selectedCharacterId || activeCombatActor.id === activeCharacter?.id;
+    const isCompanion = activeCombatActor.kind === "companion" || (!isMainCharacter && (activeCombatActor.kind === "player" || activeCombatActor.side === "heroes"));
+    if (isMainCharacter) return activeSheet;
+    if (isCompanion) return companionSheet;
+    return null;
+  })();
   const activeCombatActions = activeCombatSheet?.actions ?? [];
   const requiresBackendDamageRoll =
     combatRoundState.turnControl?.requiresDamageRoll === true ||
