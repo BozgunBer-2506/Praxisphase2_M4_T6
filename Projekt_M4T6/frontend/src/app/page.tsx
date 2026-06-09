@@ -813,7 +813,7 @@ export default function Home() {
   const activeCombatSheet = (() => {
     if (!activeCombatActor) return null;
     const isMainCharacter = activeCombatActor.id === selectedCharacterId || activeCombatActor.id === activeCharacter?.id;
-    const isCompanion = activeCombatActor.kind === "companion" || (!isMainCharacter && (activeCombatActor.kind === "player" || activeCombatActor.side === "heroes"));
+    const isCompanion = activeCombatActor.kind === "companion" || (!isMainCharacter && activeCombatActor.kind !== "enemy");
     if (isMainCharacter) return activeSheet;
     if (isCompanion) return companionSheet;
     return null;
@@ -910,6 +910,7 @@ export default function Home() {
       combat_finished: combatRoundState.enemies.every(
         (enemy) => enemy.currentHp <= 0,
       ),
+      pending_damage: combatRoundState.pendingDamage ?? null,
     };
   }, [
     activeCharacter,
@@ -1183,6 +1184,7 @@ export default function Home() {
       lastBackendEvents: frontendState.lastBackendEvents,
       turnControl: frontendState.turnControl,
       lastResolution: frontendState.lastResolution,
+      pendingDamage: frontendState.pendingDamage ?? null,
     }));
     setCombatAttackFlowState({
       actorId: frontendState.activeActorId,
@@ -1832,18 +1834,6 @@ export default function Home() {
     setCombatStatus("Backend loest den aktuellen Kampfrunden-Zug auf...");
 
     try {
-      const isSaveSynced = await syncBackendSave();
-      if (!isSaveSynced) {
-        setDmMessages((messages) => [
-          ...messages,
-          {
-            id: createId(),
-            sender: "DM",
-            text: "Der Gegnerzug kann nicht ausgewertet werden, weil der Encounter-Save das Backend nicht erreicht.",
-          },
-        ]);
-        return;
-      }
       const target =
         activeCombatActor.kind === "enemy"
           ? undefined
@@ -1931,18 +1921,6 @@ export default function Home() {
     setCombatStatus("Backend würfelt den Angriff gegen die Ziel-AC...");
 
     try {
-      const isSaveSynced = await syncBackendSave();
-      if (!isSaveSynced) {
-        setDmMessages((messages) => [
-          ...messages,
-          {
-            id: createId(),
-            sender: "DM",
-            text: "Der Attack Roll kann nicht ausgewertet werden, weil der Encounter-Save das Backend nicht erreicht.",
-          },
-        ]);
-        return;
-      }
       const action: EncounterAutoTurnAction = {
         action_type: "attack",
         actor_id:
@@ -2100,7 +2078,6 @@ export default function Home() {
     setCombatStatus("Backend würfelt den Schaden und aktualisiert HP...");
 
     try {
-      await syncBackendSave();
       const response = await resolveSaveEncounterDamageRoll(BACKEND_SLOT_NAME);
       const resolution = response.frontend_state.lastResolution;
       const damageTotal = resolution?.damage?.total ?? null;

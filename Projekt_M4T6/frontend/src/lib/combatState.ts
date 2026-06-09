@@ -32,6 +32,7 @@ export type CombatRoundState = {
   lastBackendEvents: HudEvent[];
   turnControl: FrontendEncounterState["turnControl"] | null;
   lastResolution: FrontendEncounterState["lastResolution"];
+  pendingDamage: FrontendEncounterState["pendingDamage"];
 };
 
 export type CombatAttackStep =
@@ -161,6 +162,7 @@ export const createInitialCombatRoundState = (): CombatRoundState => ({
   lastBackendEvents: [],
   turnControl: null,
   lastResolution: null,
+  pendingDamage: null,
 });
 
 export const createInitialCombatAttackFlowState = (): CombatAttackFlowState => ({

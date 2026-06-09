@@ -52,6 +52,7 @@ export type EncounterState = {
   initiative_order: EncounterInitiativeEntry[];
   participants: EncounterParticipantState[];
   combat_finished: boolean;
+  pending_damage?: Record<string, unknown> | null;
 };
 
 export type SaveGameState = {
