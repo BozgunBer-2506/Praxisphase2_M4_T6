@@ -1138,7 +1138,15 @@ def create_or_update_save(request: SaveGameRequest, db: Session = Depends(get_db
     if save_game:
         save_game.character_id = request.character_id
         save_game.scene_number = request.scene_number
-        save_game.state = request.state.model_dump()
+        new_state = request.state.model_dump()
+        existing_encounter = (save_game.state or {}).get("encounter")
+        new_encounter = new_state.get("encounter")
+        if existing_encounter and not existing_encounter.get("combat_finished", True):
+            if new_encounter is None:
+                new_state["encounter"] = existing_encounter
+            elif not new_encounter.get("pending_damage") and existing_encounter.get("pending_damage"):
+                new_state["encounter"] = {**new_encounter, "pending_damage": existing_encounter["pending_damage"]}
+        save_game.state = new_state
         flag_modified(save_game, "state")
     else:
         save_game = SaveGame(
