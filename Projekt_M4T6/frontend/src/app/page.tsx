@@ -62,6 +62,18 @@ import {
   writeCombatRouteStateSnapshot,
 } from "@/lib/combatState";
 
+let _ambientAudio: HTMLAudioElement | null = null;
+const getAmbientAudio = () => {
+  if (typeof window === "undefined") return null;
+  if (!_ambientAudio) {
+    _ambientAudio = new Audio("/sounds/ambient.mp3");
+    _ambientAudio.loop = true;
+    _ambientAudio.volume = 0.12;
+    _ambientAudio.playbackRate = 0.85;
+  }
+  return _ambientAudio;
+};
+
 const SAVE_KEY = "falkenwacht.saveStates";
 const LAST_SAVE_KEY = "falkenwacht.lastSave";
 const COMBAT_STATE_KEY = "falkenwacht.combatState";
@@ -572,17 +584,14 @@ export default function Home() {
   }, []);
 
   const toggleMusic = () => {
-    if (!audioRef.current) {
-      audioRef.current = new Audio("/sounds/ambient.mp3");
-      audioRef.current.loop = true;
-      audioRef.current.volume = 0.25;
-    }
+    const audio = getAmbientAudio();
+    if (!audio) return;
     if (musicPlaying) {
-      audioRef.current.pause();
+      audio.pause();
       setMusicPlaying(false);
       userMutedRef.current = true;
     } else {
-      void audioRef.current.play();
+      void audio.play();
       setMusicPlaying(true);
       userMutedRef.current = false;
     }
@@ -591,12 +600,11 @@ export default function Home() {
   useEffect(() => {
     const handleFirstInteraction = () => {
       if (userMutedRef.current) return;
-      if (!audioRef.current) {
-        audioRef.current = new Audio("/sounds/ambient.mp3");
-        audioRef.current.loop = true;
-        audioRef.current.volume = 0.25;
+      const audio = getAmbientAudio();
+      if (!audio) return;
+      if (audio.paused) {
+        void audio.play().then(() => setMusicPlaying(true)).catch(() => {});
       }
-      void audioRef.current.play().then(() => setMusicPlaying(true)).catch(() => {});
     };
 
     const handleGlobalClick = (e: MouseEvent) => {
