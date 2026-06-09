@@ -2021,6 +2021,7 @@ export default function Home() {
     setCombatStatus("Backend würfelt den Schaden und aktualisiert HP...");
 
     try {
+      await syncBackendSave();
       const response = await resolveSaveEncounterDamageRoll(BACKEND_SLOT_NAME);
       const resolution = response.frontend_state.lastResolution;
       const damageTotal = resolution?.damage?.total ?? null;

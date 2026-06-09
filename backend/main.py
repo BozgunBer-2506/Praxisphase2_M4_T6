@@ -1151,9 +1151,12 @@ def create_or_update_save(request: SaveGameRequest, db: Session = Depends(get_db
 
     db.commit()
     db.refresh(save_game)
-    upsert_encounter_from_save_state(db, save_game)
-    db.commit()
-    db.refresh(save_game)
+    try:
+        upsert_encounter_from_save_state(db, save_game)
+        db.commit()
+        db.refresh(save_game)
+    except Exception:
+        db.rollback()
     return save_game
 
 
