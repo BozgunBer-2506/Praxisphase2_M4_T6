@@ -213,6 +213,8 @@ export const advanceCombatTurnState = (
       activeActorId: nextActor?.id ?? null,
       turnIndex: nextTurnIndex,
       awaitingRoll: null,
+      turnControl: null,
+      pendingDamage: null,
     },
     attackFlowState: createCombatAttackFlowStateForActor(nextActor, nextRound),
     isNewRound,

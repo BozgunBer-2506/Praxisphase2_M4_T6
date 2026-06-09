@@ -82,7 +82,7 @@ const MAX_CAMPAIGN_SAVES = 5;
 const CAMPAIGN_TITLE = "Falkenwacht - Die Korruption der Greifenstadt";
 const WORD_REVEAL_MS = 35;
 const diceTypes = [4, 6, 8, 10, 12, 20, 100] as const;
-const BACKEND_SLOT_NAME = "autosave";
+const getBackendSlotName = () => `autosave_${getUsername() ?? "guest"}`;
 const BACKEND_COMBAT_SCENE_NUMBER = 3;
 const BACKEND_MAX_SCENE_NUMBER = 3;
 
@@ -688,7 +688,7 @@ export default function Home() {
     if (isLoggedIn()) {
       listBackendSaves()
         .then((saves) => {
-          const autosave = saves.find((s) => s.slot_name === BACKEND_SLOT_NAME);
+          const autosave = saves.find((s) => s.slot_name === getBackendSlotName());
           if (autosave && (autosave.character_id === "ryu" || autosave.character_id === "ayane")) {
             const sceneId = scenes[autosave.scene_number - 1]?.id;
             if (sceneId) {
@@ -1484,7 +1484,7 @@ export default function Home() {
 
     try {
       await createOrUpdateSave({
-        slot_name: BACKEND_SLOT_NAME,
+        slot_name: getBackendSlotName(),
         character_id: toBackendCharacterId(selectedCharacterId),
         scene_number: getBackendSceneNumber(currentSceneId),
         state,
@@ -1531,7 +1531,7 @@ export default function Home() {
         return;
       }
       const response = await runSaveInventoryAction(
-        BACKEND_SLOT_NAME,
+        getBackendSlotName(),
         item.item_id,
         action,
       );
@@ -1885,7 +1885,7 @@ export default function Home() {
             : undefined;
 
       const response = await resolveSaveEncounterAutoTurn(
-        BACKEND_SLOT_NAME,
+        getBackendSlotName(),
         action,
       );
       applyEncounterResolveResponse(
@@ -1934,7 +1934,7 @@ export default function Home() {
 
       try {
         response = (await resolveSaveEncounterAttackRoll(
-          BACKEND_SLOT_NAME,
+          getBackendSlotName(),
           action,
         )) as LegacySaveEncounterResolveResponse;
       } catch (attackError) {
@@ -1944,7 +1944,7 @@ export default function Home() {
         ) {
           usedLegacyAutoTurn = true;
           response = (await resolveSaveEncounterAutoTurn(
-            BACKEND_SLOT_NAME,
+            getBackendSlotName(),
             action,
           )) as LegacySaveEncounterResolveResponse;
         } else {
@@ -2078,7 +2078,7 @@ export default function Home() {
     setCombatStatus("Backend würfelt den Schaden und aktualisiert HP...");
 
     try {
-      const response = await resolveSaveEncounterDamageRoll(BACKEND_SLOT_NAME);
+      const response = await resolveSaveEncounterDamageRoll(getBackendSlotName());
       const resolution = response.frontend_state.lastResolution;
       const damageTotal = resolution?.damage?.total ?? null;
       const remainingHp = resolution?.hp?.remainingHp ?? null;
@@ -2529,7 +2529,7 @@ export default function Home() {
     try {
       const response = await askAiDmHelp({
         message: trimmedInput,
-        slot_name: BACKEND_SLOT_NAME,
+        slot_name: getBackendSlotName(),
         scene_context: {
           id: currentScene.id,
           title: currentScene.title,
