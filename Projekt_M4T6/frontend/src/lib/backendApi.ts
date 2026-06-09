@@ -240,14 +240,14 @@ type RequestOptions = {
 };
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (options.body !== undefined) headers["Content-Type"] = "application/json";
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: options.method ?? "GET",
-    headers:
-      options.body === undefined
-        ? undefined
-        : {
-            "Content-Type": "application/json",
-          },
+    headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
 
