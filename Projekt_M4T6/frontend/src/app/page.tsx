@@ -808,6 +808,8 @@ export default function Home() {
           total: lastCombatAttack.total ?? "?",
           targetAc: lastCombatAttack.targetAc ?? "?",
           critical: lastCombatAttack.critical === true,
+          nat20: lastCombatAttack.nat20 === true,
+          nat1: lastCombatAttack.nat1 === true,
           damage: lastCombatDamage?.total ?? 0,
           remainingHp: lastCombatHp?.remainingHp ?? null,
           isEnemyAction: isLastResolutionEnemyAction,
@@ -3993,7 +3995,11 @@ export default function Home() {
                   ) : (
                     <button
                       className="mt-2 w-full rounded-md border border-ember-400/45 bg-ember-500/15 px-3 py-2 text-xs font-black text-ember-100 transition hover:border-ember-300 hover:bg-ember-500/25 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={isBackendTurnResolving || (!isEnemyTurn && requiresBackendDamageRoll)}
+                      disabled={
+                        isBackendTurnResolving ||
+                        (!isEnemyTurn && requiresBackendDamageRoll) ||
+                        (!isEnemyTurn && (combatAttackFlowState.step === "chooseAction" || combatAttackFlowState.step === "chooseTarget"))
+                      }
                       onClick={() => resolveBackendCombatTurn()}
                       type="button"
                     >
@@ -4001,9 +4007,11 @@ export default function Home() {
                         ? "Backend rechnet..."
                         : !isEnemyTurn && requiresBackendDamageRoll
                           ? "Schaden wuerfeln zuerst"
-                          : isEnemyTurn
-                            ? "Enemy-Turn aufloesen"
-                            : "Aktion abschliessen"}
+                          : !isEnemyTurn && (combatAttackFlowState.step === "chooseAction" || combatAttackFlowState.step === "chooseTarget")
+                            ? "Erst Aktion + Ziel waehlen"
+                            : isEnemyTurn
+                              ? "Enemy-Turn aufloesen"
+                              : "Aktion abschliessen"}
                     </button>
                   )}
                 </div>
@@ -4569,9 +4577,18 @@ export default function Home() {
                               </span>
                             </span>
                           </div>
+                          {lastCombatSummary.nat20 && (
+                            <p className="mt-2 rounded border px-2 py-1 text-xs font-black" style={{background:'rgba(212,175,55,0.2)',border:'1px solid rgba(212,175,55,0.5)',color:'#f0e6cc'}}>
+                              NATURAL 20 - Kritischer Treffer! Doppelter Schaden.
+                            </p>
+                          )}
+                          {lastCombatSummary.nat1 && (
+                            <p className="mt-2 rounded border px-2 py-1 text-xs font-black" style={{background:'rgba(239,68,68,0.15)',border:'1px solid rgba(239,68,68,0.4)',color:'#fca5a5'}}>
+                              NATURAL 1 - Automatischer Fehlschlag!
+                            </p>
+                          )}
                           {lastCombatSummary.hit ? (
                             <p className="mt-2 rounded border border-white/10 bg-black/25 px-2 py-1 font-bold text-slate-100">
-                              {lastCombatSummary.critical ? "Kritischer Treffer. " : ""}
                               HP danach:{" "}
                               {lastCombatSummary.remainingHp ?? "unbekannt"}
                             </p>

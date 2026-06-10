@@ -91,11 +91,12 @@ export default function CampaignsPage() {
   }, [isAccountOpen]);
 
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || userId === null) return;
 
+    const localSaveKey = `${SAVE_KEY}.${userId}`;
     let localSaves: SaveState[] = [];
     try {
-      localSaves = JSON.parse(localStorage.getItem(SAVE_KEY) ?? "[]");
+      localSaves = JSON.parse(localStorage.getItem(localSaveKey) ?? "[]");
     } catch {
       localSaves = [];
     }
@@ -125,7 +126,7 @@ export default function CampaignsPage() {
       .catch(() => {
         setSaveStates(localSaves);
       });
-  }, [loaded]);
+  }, [loaded, userId]);
 
   const deleteSaveState = (saveStateId: string) => {
     const target = saveStates.find((s) => s.id === saveStateId);
@@ -133,7 +134,9 @@ export default function CampaignsPage() {
       void deleteBackendSave(target.choiceLabel).catch(() => null);
     }
     const nextSaveStates = saveStates.filter((s) => s.id !== saveStateId);
-    localStorage.setItem(SAVE_KEY, JSON.stringify(nextSaveStates));
+    const localSaveKey = userId ? `${SAVE_KEY}.${userId}` : SAVE_KEY;
+    const nextLocalSaves = nextSaveStates.filter((s) => !s.id.startsWith("backend-"));
+    localStorage.setItem(localSaveKey, JSON.stringify(nextLocalSaves));
     try {
       const lastSave = JSON.parse(localStorage.getItem(LAST_SAVE_KEY) ?? "null") as SaveState | null;
       if (lastSave && !nextSaveStates.some((s) => s.id === lastSave.id)) {
