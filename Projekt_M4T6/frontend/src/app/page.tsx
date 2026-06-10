@@ -418,6 +418,7 @@ export default function Home() {
   const [username, setUsername] = useState<string | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const [leaveConfirmHref, setLeaveConfirmHref] = useState<string | null>(null);
   const [isQuestLogOpen, setIsQuestLogOpen] = useState(true);
   const [questLogExpanded, setQuestLogExpanded] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
@@ -2808,6 +2809,33 @@ export default function Home() {
 
   return (
     <div className="h-dvh flex flex-col overflow-hidden text-white" style={{background: '#050505'}}>
+      {/* Leave combat confirmation modal */}
+      {leaveConfirmHref && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center px-4" style={{background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)'}}>
+          <div className="w-full max-w-xs rounded-xl border p-6 text-center" style={{background: 'rgba(8,8,8,0.98)', border: '1px solid rgba(212,175,55,0.35)', boxShadow: '0 0 40px rgba(212,175,55,0.1)'}}>
+            <p className="text-[0.62rem] font-bold uppercase tracking-[0.2em] font-cinzel mb-3" style={{color: 'rgba(212,175,55,0.8)'}}>Achtung</p>
+            <p className="text-sm font-semibold text-slate-100 mb-1">Kampf läuft noch!</p>
+            <p className="text-xs text-slate-400 mb-5">Wenn du jetzt verlässt, wird der aktuelle Kampffortschritt nicht gespeichert.</p>
+            <div className="flex gap-2">
+              <button
+                className="flex-1 rounded-md border border-white/10 bg-white/[0.06] px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/10"
+                onClick={() => setLeaveConfirmHref(null)}
+                type="button"
+              >
+                Abbrechen
+              </button>
+              <button
+                className="flex-1 rounded-md px-3 py-2 text-xs font-black text-black transition hover:opacity-90"
+                onClick={() => { window.location.href = leaveConfirmHref; }}
+                style={{background: '#d4af37'}}
+                type="button"
+              >
+                Verlassen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showVictoryOverlay && victoryOutcome && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center px-6" style={{background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(12px)'}}>
           <div className="w-full max-w-sm rounded-xl border p-6 text-center" style={{borderColor: `${victoryOutcome.color}40`, background: 'rgba(8,8,8,0.97)'}}>
@@ -2849,8 +2877,9 @@ export default function Home() {
             href="/campaigns"
             className="hidden sm:flex px-2.5 py-1.5 text-[0.65rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors"
             onClick={(e) => {
-              if (combatRoundState.round > 0 && !window.confirm("Kampf läuft noch! Wirklich verlassen?")) {
+              if (combatRoundState.round > 0) {
                 e.preventDefault();
+                setLeaveConfirmHref("/campaigns");
               }
             }}
           >
@@ -2860,8 +2889,9 @@ export default function Home() {
             href="/login"
             className="hidden sm:flex px-2.5 py-1.5 text-[0.65rem] font-bold font-cinzel rounded uppercase tracking-[0.12em] text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors"
             onClick={(e) => {
-              if (combatRoundState.round > 0 && !window.confirm("Kampf läuft noch! Wirklich verlassen?")) {
+              if (combatRoundState.round > 0) {
                 e.preventDefault();
+                setLeaveConfirmHref("/login");
               }
             }}
           >
@@ -2940,8 +2970,9 @@ export default function Home() {
                     href="/campaigns"
                     onClick={(e) => {
                       setIsAccountOpen(false);
-                      if (combatRoundState.round > 0 && !window.confirm("Kampf läuft noch! Wirklich verlassen?")) {
+                      if (combatRoundState.round > 0) {
                         e.preventDefault();
+                        setLeaveConfirmHref("/campaigns");
                       }
                     }}
                   >
