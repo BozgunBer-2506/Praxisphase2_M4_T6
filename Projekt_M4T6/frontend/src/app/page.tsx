@@ -3371,6 +3371,33 @@ export default function Home() {
                           </div>
                         ))}
                       </div>
+                      {activeNpc!.inventory && activeNpc!.inventory.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-[0.62rem] uppercase tracking-[0.14em] text-slate-400">
+                            Inventar
+                          </p>
+                          {activeNpc!.inventory.map((item) => (
+                            <div
+                              className="flex items-center justify-between rounded bg-white/[0.04] px-2 py-1.5"
+                              key={item.name}
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-[0.65rem] font-bold text-slate-200">
+                                  {item.name}
+                                </p>
+                                {item.description && (
+                                  <p className="truncate text-[0.58rem] text-slate-500">
+                                    {item.description}
+                                  </p>
+                                )}
+                              </div>
+                              <span className="ml-2 shrink-0 text-[0.6rem] font-bold text-slate-400">
+                                x{item.quantity}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ) : null}
                 </article> : null}
