@@ -3015,66 +3015,53 @@ export default function Home() {
 
             {activeCharacter && activeNpc && activeRuntimeStats && companionRuntimeStats ? (
               <>
-                {/* Portrait */}
-                <div className="px-4 py-3 border-b border-white/[0.07] shrink-0">
-                  <div className="relative rounded-lg overflow-hidden" style={{border: '1px solid rgba(212,175,55,0.5)', boxShadow: '0 0 25px rgba(212,175,55,0.2), inset 0 0 30px rgba(0,0,0,0.5)'}}>
-                    <div className="h-48 bg-gradient-to-b from-white/5 to-black/80 flex items-end justify-center relative">
-                      {/* Atmospheric overlay */}
-                      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/60" />
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        alt={`${activeCharacter.name} Portrait`}
-                        className="relative z-10 max-h-48 w-auto object-contain drop-shadow-2xl"
-                        src={activeCharacter.modelImageUrl}
-                        style={{filter: 'drop-shadow(0 0 12px rgba(212,175,55,0.3))'}}
-                      />
-                    </div>
-                    {/* Gold corner accents */}
-                    <div className="absolute top-1 left-1 w-3 h-3 border-t border-l" style={{borderColor: 'rgba(212,175,55,0.6)'}} />
-                    <div className="absolute top-1 right-1 w-3 h-3 border-t border-r" style={{borderColor: 'rgba(212,175,55,0.6)'}} />
-                    <div className="absolute bottom-1 left-1 w-3 h-3 border-b border-l" style={{borderColor: 'rgba(212,175,55,0.6)'}} />
-                    <div className="absolute bottom-1 right-1 w-3 h-3 border-b border-r" style={{borderColor: 'rgba(212,175,55,0.6)'}} />
-                  </div>
-                </div>
-
-                {/* HP / AC / SP bars */}
-                <div className="px-4 py-3 space-y-2.5 border-b border-white/[0.07] shrink-0">
-                  {/* HP */}
-                  <div className="flex items-center gap-2.5">
-                    <HeartPulse className="w-3.5 h-3.5 shrink-0" style={{color: '#ef4444'}} />
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[0.6rem] font-bold uppercase tracking-wider text-slate-500 font-cinzel">TP</span>
-                        <span className="text-[0.68rem] font-bold text-white">{activeRuntimeStats.currentHp} / {activeRuntimeStats.maxHp}</span>
+                {/* Party overview - Hauptcharakter + Begleiter nebeneinander */}
+                <div className="px-3 py-3 border-b border-white/[0.07] shrink-0">
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Hauptcharakter */}
+                    <div className="rounded-lg overflow-hidden" style={{border: '1px solid rgba(212,175,55,0.45)', boxShadow: '0 0 12px rgba(212,175,55,0.1)'}}>
+                      <div className="h-28 bg-gradient-to-b from-white/5 to-black/70 flex items-end justify-center relative">
+                        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/50" />
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img alt={activeCharacter.name} className="relative z-10 max-h-28 w-auto object-contain drop-shadow-xl" src={activeCharacter.modelImageUrl} style={{filter: 'drop-shadow(0 0 8px rgba(212,175,55,0.25))'}} />
                       </div>
-                      <div className="h-1.5 rounded-full overflow-hidden bg-black/50">
-                        <div className="h-full rounded-full transition-all duration-500" style={{width: `${Math.max(0, Math.min(100, (activeRuntimeStats.currentHp / activeRuntimeStats.maxHp) * 100))}%`, background: '#ef4444', boxShadow: '0 0 6px rgba(239,68,68,0.5)'}} />
+                      <div className="px-2 py-1.5" style={{background: 'rgba(0,0,0,0.4)'}}>
+                        <p className="text-[0.6rem] font-bold text-slate-100 truncate font-cinzel">{activeCharacter.name}</p>
+                        <p className="text-[0.52rem] text-slate-500 mb-1.5 truncate">{activeCharacter.className}</p>
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-[0.52rem] text-red-400 font-cinzel">TP</span>
+                          <span className="text-[0.58rem] font-bold text-white">{activeRuntimeStats.currentHp}/{activeRuntimeStats.maxHp}</span>
+                        </div>
+                        <div className="h-1 rounded-full overflow-hidden bg-black/60 mb-1.5">
+                          <div className="h-full rounded-full transition-all duration-500" style={{width: `${Math.max(0, Math.min(100, (activeRuntimeStats.currentHp / activeRuntimeStats.maxHp) * 100))}%`, background: '#ef4444'}} />
+                        </div>
+                        <div className="flex gap-1">
+                          <span className="text-[0.52rem] rounded px-1 py-0.5 bg-blue-500/15 text-blue-200 font-bold">RK {activeRuntimeStats.ac}</span>
+                          <span className="text-[0.52rem] rounded px-1 py-0.5 bg-purple-500/15 text-purple-200 font-bold">GES {activeCharacter.stats.speed}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  {/* AC */}
-                  <div className="flex items-center gap-2.5">
-                    <ShieldCheck className="w-3.5 h-3.5 shrink-0" style={{color: '#3b82f6'}} />
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[0.6rem] font-bold uppercase tracking-wider text-slate-500 font-cinzel">RK</span>
-                        <span className="text-[0.68rem] font-bold text-white">{activeRuntimeStats.ac}</span>
+                    {/* Begleiter */}
+                    <div className="rounded-lg overflow-hidden" style={{border: '1px solid rgba(255,255,255,0.1)'}}>
+                      <div className="h-28 bg-gradient-to-b from-white/5 to-black/70 flex items-end justify-center relative">
+                        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/50" />
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img alt={activeNpc.name} className="relative z-10 max-h-28 w-auto object-contain drop-shadow-xl" src={activeNpc.modelImageUrl} />
                       </div>
-                      <div className="h-1.5 rounded-full overflow-hidden bg-black/50">
-                        <div className="h-full rounded-full" style={{width: `${Math.max(0, Math.min(100, (activeRuntimeStats.ac / 20) * 100))}%`, background: '#3b82f6', boxShadow: '0 0 6px rgba(59,130,246,0.5)'}} />
-                      </div>
-                    </div>
-                  </div>
-                  {/* Speed */}
-                  <div className="flex items-center gap-2.5">
-                    <Swords className="w-3.5 h-3.5 shrink-0" style={{color: '#a855f7'}} />
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[0.6rem] font-bold uppercase tracking-wider text-slate-500 font-cinzel">GES</span>
-                        <span className="text-[0.68rem] font-bold text-white">{activeCharacter.stats.speed}ft</span>
-                      </div>
-                      <div className="h-1.5 rounded-full overflow-hidden bg-black/50">
-                        <div className="h-full rounded-full" style={{width: '100%', background: '#a855f7', boxShadow: '0 0 6px rgba(168,85,247,0.5)'}} />
+                      <div className="px-2 py-1.5" style={{background: 'rgba(0,0,0,0.4)'}}>
+                        <p className="text-[0.6rem] font-bold text-slate-100 truncate font-cinzel">{activeNpc.name}</p>
+                        <p className="text-[0.52rem] text-slate-500 mb-1.5 font-cinzel uppercase tracking-wide">Begleitung</p>
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-[0.52rem] text-red-400 font-cinzel">TP</span>
+                          <span className="text-[0.58rem] font-bold text-white">{companionRuntimeStats.currentHp}/{companionRuntimeStats.maxHp}</span>
+                        </div>
+                        <div className="h-1 rounded-full overflow-hidden bg-black/60 mb-1.5">
+                          <div className="h-full rounded-full transition-all duration-500" style={{width: `${Math.max(0, Math.min(100, (companionRuntimeStats.currentHp / companionRuntimeStats.maxHp) * 100))}%`, background: '#ef4444'}} />
+                        </div>
+                        <div className="flex gap-1">
+                          <span className="text-[0.52rem] rounded px-1 py-0.5 bg-blue-500/15 text-blue-200 font-bold">RK {companionRuntimeStats.ac}</span>
+                          <span className="text-[0.52rem] rounded px-1 py-0.5 bg-purple-500/15 text-purple-200 font-bold">GES {activeNpc.stats.speed}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
