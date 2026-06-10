@@ -429,6 +429,7 @@ export default function Home() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const userMutedRef = useRef(false);
   const pendingCombatRollRef = useRef<{ roll: number; total: number; label: string } | null>(null);
+  const [d20TargetValue, setD20TargetValue] = useState<number | null>(null);
   const dmMessagesEndRef = useRef<HTMLDivElement>(null);
   const [currentSceneId, setCurrentSceneId] = useState(initialSceneId);
   const [saveRestored, setSaveRestored] = useState(false);
@@ -1969,6 +1970,7 @@ export default function Home() {
           total: attackResolution.total ?? attackResolution.roll,
           label: "Angriffswurf",
         };
+        setD20TargetValue(attackResolution.roll);
       }
       setD20TriggerKey((k) => k + 1);
 
@@ -2088,11 +2090,13 @@ export default function Home() {
 
       setInventoryState(response.state.inventory);
       if (damageTotal != null) {
+        const damageRoll = resolution?.damage?.rolls?.[0] ?? damageTotal;
         pendingCombatRollRef.current = {
-          roll: resolution?.damage?.rolls?.[0] ?? damageTotal,
+          roll: damageRoll,
           total: damageTotal,
           label: "Schadenswurf",
         };
+        setD20TargetValue(damageRoll);
       }
       setD20TriggerKey((k) => k + 1);
       applyFrontendEncounterState(response.frontend_state);
@@ -2179,6 +2183,9 @@ export default function Home() {
 
     setRollResult(result);
     setRollAnimationKey((currentKey) => currentKey + 1);
+    if (diceType === 20) {
+      setD20TargetValue(selectedRoll);
+    }
     setD20TriggerKey((k) => k + 1);
     addGameLog({
       title: `${result.label} gewürfelt`,
@@ -2240,6 +2247,9 @@ export default function Home() {
 
     setRollResult(result);
     setRollAnimationKey((currentKey) => currentKey + 1);
+    if (formulaDiceType === 20) {
+      setD20TargetValue(selectedRoll);
+    }
     setD20TriggerKey((k) => k + 1);
     addGameLog({
       title: label,
@@ -4849,6 +4859,7 @@ export default function Home() {
         <D20Component
           currentValue={rollResult?.total ?? null}
           rollTrigger={d20TriggerKey}
+          targetValue={d20TargetValue}
           onRoll={(val) => {
             const combat = pendingCombatRollRef.current;
             if (combat) {

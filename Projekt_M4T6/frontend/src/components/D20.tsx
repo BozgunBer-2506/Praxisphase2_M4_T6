@@ -68,10 +68,12 @@ export default function D20({
   onRoll,
   currentValue,
   rollTrigger,
+  targetValue,
 }: {
   onRoll: (v:number) => void;
   currentValue: number|null;
   rollTrigger?: number;
+  targetValue?: number | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ryRef    = useRef(ryForNumber(20));
@@ -82,7 +84,10 @@ export default function D20({
   const raf       = useRef<number>(0);
   const busyRef   = useRef(false);
   const lastTrigger = useRef<number | undefined>(rollTrigger);
+  const targetValueRef = useRef<number | null | undefined>(targetValue);
   const [lastRoll, setLastRoll] = useState<number|null>(currentValue);
+
+  useEffect(() => { targetValueRef.current = targetValue; }, [targetValue]);
 
   const spawnBurst = useCallback((cx:number, cy:number, S:number) => {
     for(let i=0;i<22;i++){
@@ -101,7 +106,9 @@ export default function D20({
   const startRoll = useCallback(() => {
     if(busyRef.current) return;
     busyRef.current = true;
-    const val = Math.floor(Math.random()*20)+1;
+    const pending = targetValueRef.current;
+    targetValueRef.current = null;
+    const val = (pending !== null && pending !== undefined) ? pending : Math.floor(Math.random()*20)+1;
     const targetRy = ryForNumber(val);
     // Spin 3-4 full rotations before landing
     const spins = 3 + Math.random();
