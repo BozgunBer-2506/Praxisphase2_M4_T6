@@ -2888,13 +2888,13 @@ export default function Home() {
                       </div>
                     </div>
                   </div>
-                  {/* SP */}
+                  {/* Speed */}
                   <div className="flex items-center gap-2.5">
                     <Swords className="w-3.5 h-3.5 shrink-0" style={{color: '#a855f7'}} />
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-[0.6rem] font-bold uppercase tracking-wider text-slate-500 font-cinzel">SP</span>
-                        <span className="text-[0.68rem] font-bold text-white">{activeCharacter.stats.speed} / {activeCharacter.stats.speed}</span>
+                        <span className="text-[0.6rem] font-bold uppercase tracking-wider text-slate-500 font-cinzel">GES</span>
+                        <span className="text-[0.68rem] font-bold text-white">{activeCharacter.stats.speed}ft</span>
                       </div>
                       <div className="h-1.5 rounded-full overflow-hidden bg-black/50">
                         <div className="h-full rounded-full" style={{width: '100%', background: '#a855f7', boxShadow: '0 0 6px rgba(168,85,247,0.5)'}} />
