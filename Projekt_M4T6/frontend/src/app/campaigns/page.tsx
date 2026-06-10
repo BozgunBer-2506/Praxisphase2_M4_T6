@@ -143,7 +143,9 @@ export default function CampaignsPage() {
 
   const startNewGame = () => {
     localStorage.removeItem(LAST_SAVE_KEY);
-    window.location.href = "/";
+    localStorage.removeItem("falkenwacht.combatState");
+    localStorage.removeItem("falkenwacht.combatRouteState");
+    window.location.href = "/?newgame=1";
   };
 
   if (!loaded) return null;

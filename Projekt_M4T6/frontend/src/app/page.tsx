@@ -642,6 +642,15 @@ export default function Home() {
   }, [isAccountOpen]);
 
   useEffect(() => {
+    window.history.pushState(null, "", window.location.href);
+    const handlePopState = () => {
+      window.history.pushState(null, "", window.location.href);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
     if (combatRoundState.round > 0) {
       window.localStorage.setItem(COMBAT_STATE_KEY, JSON.stringify({
         roundState: combatRoundState,
@@ -653,6 +662,15 @@ export default function Home() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+
+    if (params.get("newgame") === "1") {
+      window.history.replaceState(null, "", window.location.pathname);
+      window.localStorage.removeItem(LAST_SAVE_KEY);
+      window.localStorage.removeItem(COMBAT_STATE_KEY);
+      setSaveRestored(true);
+      return;
+    }
+
     const sceneParam = params.get("scene");
     const characterParam = params.get("character") as CharacterId | null;
     const hasValidSceneParam =
@@ -3240,7 +3258,7 @@ export default function Home() {
                       />
                     </button>
                   </div>
-                  <div className="grid grid-cols-3 gap-1 border-t border-white/10 p-1.5 text-center">
+                  <div className="grid grid-cols-4 gap-1 border-t border-white/10 p-1.5 text-center">
                     <span className="rounded bg-red-500/15 px-1 py-1 text-[0.62rem] font-bold text-red-100">
                       HP {companionRuntimeStats!.currentHp}/{companionRuntimeStats!.maxHp}
                     </span>
@@ -3249,6 +3267,9 @@ export default function Home() {
                     </span>
                     <span className="rounded bg-white/[0.06] px-1 py-1 text-[0.62rem] font-bold text-slate-100">
                       SP {activeNpc!.stats.speed}
+                    </span>
+                    <span className="rounded bg-white/[0.06] px-1 py-1 text-[0.62rem] font-bold text-slate-100">
+                      INI +{activeNpc!.stats.initiative}
                     </span>
                   </div>
                   {isCompanionExpanded && companionSheet ? (
@@ -3266,6 +3287,14 @@ export default function Home() {
                       >
                         Initiative +{activeNpc!.stats.initiative}
                       </button>
+                      <div className="grid grid-cols-2 gap-1">
+                        {companionSheet!.saves.map(([label, val]) => (
+                          <div className="flex items-center justify-between rounded bg-white/[0.04] px-2 py-1" key={label}>
+                            <span className="text-[0.6rem] uppercase tracking-wide text-slate-400">{label}</span>
+                            <span className="text-[0.65rem] font-bold text-slate-200">{val}</span>
+                          </div>
+                        ))}
+                      </div>
                       <div className="space-y-1">
                         <p className="text-[0.62rem] uppercase tracking-[0.14em] text-slate-400">
                           Aktionen
@@ -3909,7 +3938,7 @@ export default function Home() {
               <div className="absolute inset-0 p-0">
           <>
             {isCombatScene && combatRoundState.round > 0 ? (
-              <div className="absolute left-3 right-3 top-14 z-20 grid gap-2 rounded-md border border-white/10 bg-ink-950/80 p-2 shadow-2xl backdrop-blur lg:grid-cols-[12rem_minmax(0,1fr)]">
+              <div className="absolute right-3 top-14 z-20 w-[min(26rem,calc(100%-1.5rem))] grid gap-2 rounded-md border border-white/10 bg-ink-950/85 p-2 shadow-2xl backdrop-blur lg:grid-cols-[10rem_minmax(0,1fr)]">
                 <div className="rounded-md border border-ember-400/35 bg-ember-500/10 px-3 py-2">
                   <p className="text-[0.62rem] font-bold uppercase tracking-[0.18em] text-ember-300">
                     Kampfrunde {combatRoundState.round}
