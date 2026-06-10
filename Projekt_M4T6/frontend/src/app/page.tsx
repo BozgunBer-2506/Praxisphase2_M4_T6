@@ -94,14 +94,8 @@ const createId = () =>
 const toBackendCharacterId = (characterId: CharacterId) => characterId;
 
 const toFrontendCharacterId = (characterId: string): CharacterId | null => {
-  if (characterId === "ayane") {
-    return "ryu";
-  }
-
-  if (characterId === "johan") {
-    return "ayane";
-  }
-
+  if (characterId === "ryu") return "ryu";
+  if (characterId === "ayane") return "ayane";
   return null;
 };
 

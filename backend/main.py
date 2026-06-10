@@ -1142,7 +1142,7 @@ def save_inventory_action(slot_name: str, request: SaveInventoryActionRequest, d
 
 
 @app.post("/saves", response_model=SaveGameResponse)
-def create_or_update_save(request: SaveGameRequest, db: Session = Depends(get_db)):
+def create_or_update_save(request: SaveGameRequest, current_user: User | None = Depends(get_current_user), db: Session = Depends(get_db)):
     character = CHARACTERS.get(request.character_id)
     if not character:
         raise HTTPException(status_code=404, detail="Character not found")
@@ -1159,6 +1159,8 @@ def create_or_update_save(request: SaveGameRequest, db: Session = Depends(get_db
     if save_game:
         save_game.character_id = request.character_id
         save_game.scene_number = request.scene_number
+        if current_user and save_game.user_id is None:
+            save_game.user_id = current_user.id
         new_state = request.state.model_dump()
         existing_encounter = (save_game.state or {}).get("encounter")
         new_encounter = new_state.get("encounter")
@@ -1175,6 +1177,7 @@ def create_or_update_save(request: SaveGameRequest, db: Session = Depends(get_db
             character_id=request.character_id,
             scene_number=request.scene_number,
             state=request.state.model_dump(),
+            user_id=current_user.id if current_user else None,
         )
         db.add(save_game)
 
@@ -1190,21 +1193,29 @@ def create_or_update_save(request: SaveGameRequest, db: Session = Depends(get_db
 
 
 @app.get("/saves", response_model=list[SaveGameSummaryResponse])
-def list_saves(db: Session = Depends(get_db)):
-    return db.query(SaveGame).order_by(SaveGame.id).all()
+def list_saves(current_user: User | None = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not current_user:
+        return []
+    return db.query(SaveGame).filter(SaveGame.user_id == current_user.id).order_by(SaveGame.id).all()
 
 
 @app.get("/saves/{slot_name}", response_model=SaveGameResponse)
-def get_save(slot_name: str, db: Session = Depends(get_db)):
-    save_game = db.query(SaveGame).filter(SaveGame.slot_name == slot_name).first()
+def get_save(slot_name: str, current_user: User | None = Depends(get_current_user), db: Session = Depends(get_db)):
+    query = db.query(SaveGame).filter(SaveGame.slot_name == slot_name)
+    if current_user:
+        query = query.filter(SaveGame.user_id == current_user.id)
+    save_game = query.first()
     if not save_game:
         raise HTTPException(status_code=404, detail="Save game not found")
     return save_game
 
 
 @app.delete("/saves/{slot_name}")
-def delete_save(slot_name: str, db: Session = Depends(get_db)):
-    save_game = db.query(SaveGame).filter(SaveGame.slot_name == slot_name).first()
+def delete_save(slot_name: str, current_user: User | None = Depends(get_current_user), db: Session = Depends(get_db)):
+    query = db.query(SaveGame).filter(SaveGame.slot_name == slot_name)
+    if current_user:
+        query = query.filter(SaveGame.user_id == current_user.id)
+    save_game = query.first()
     if not save_game:
         raise HTTPException(status_code=404, detail="Save game not found")
 

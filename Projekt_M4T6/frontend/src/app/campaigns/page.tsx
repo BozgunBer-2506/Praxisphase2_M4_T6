@@ -18,7 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { characters, type CharacterId } from "@/data/scenes";
 import { getUsername, getUserId, isLoggedIn, logout } from "@/lib/auth";
-import { listBackendSaves } from "@/lib/backendApi";
+import { deleteBackendSave, listBackendSaves } from "@/lib/backendApi";
 
 const SAVE_KEY = "falkenwacht.saveStates";
 const LAST_SAVE_KEY = "falkenwacht.lastSave";
@@ -128,6 +128,10 @@ export default function CampaignsPage() {
   }, [loaded]);
 
   const deleteSaveState = (saveStateId: string) => {
+    const target = saveStates.find((s) => s.id === saveStateId);
+    if (target?.id.startsWith("backend-") && target.choiceLabel) {
+      void deleteBackendSave(target.choiceLabel).catch(() => null);
+    }
     const nextSaveStates = saveStates.filter((s) => s.id !== saveStateId);
     localStorage.setItem(SAVE_KEY, JSON.stringify(nextSaveStates));
     try {

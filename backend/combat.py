@@ -1,3 +1,5 @@
+import random
+
 from dice import apply_damage, attack_roll, resolve_attack, roll_damage
 
 
@@ -280,7 +282,8 @@ def resolve_enemy_turn(state: dict, roller=None) -> dict:
     if actor["defeated"]:
         raise ValueError("defeated actor cannot act")
 
-    target = _first_living_participant_by_side(participants, "heroes")
+    living_heroes = [p for p in participants if p.get("side") == "heroes" and not p.get("defeated")]
+    target = random.choice(living_heroes) if living_heroes else None
     if not target:
         return {
             "state": {**state, "participants": participants, "active_participant_id": None, "combat_finished": True},

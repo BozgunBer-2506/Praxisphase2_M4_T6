@@ -272,6 +272,12 @@ export async function listBackendSaves() {
   return request<BackendSaveSummary[]>("/saves");
 }
 
+export async function deleteBackendSave(slotName: string) {
+  return request<{ status: string }>(`/saves/${encodeURIComponent(slotName)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function getInventoryView(inventory: InventoryStateItem[]) {
   return request<{ items: InventoryViewItem[] }>("/inventory/view", {
     method: "POST",
