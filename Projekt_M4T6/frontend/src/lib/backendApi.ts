@@ -269,8 +269,20 @@ export type BackendSaveSummary = {
   scene_number: number;
 };
 
+export type BackendSaveFull = {
+  id: number;
+  slot_name: string;
+  character_id: string;
+  scene_number: number;
+  state: SaveGameState;
+};
+
 export async function listBackendSaves() {
   return request<BackendSaveSummary[]>("/saves");
+}
+
+export async function getBackendSave(slotName: string) {
+  return request<BackendSaveFull>(`/saves/${encodeURIComponent(slotName)}`);
 }
 
 export async function deleteBackendSave(slotName: string) {

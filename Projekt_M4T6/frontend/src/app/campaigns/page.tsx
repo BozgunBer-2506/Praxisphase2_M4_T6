@@ -18,10 +18,11 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { characters, type CharacterId } from "@/data/scenes";
 import { getUsername, getUserId, isLoggedIn, logout } from "@/lib/auth";
-import { deleteBackendSave, listBackendSaves } from "@/lib/backendApi";
+import { deleteBackendSave, getBackendSave, listBackendSaves } from "@/lib/backendApi";
 
 const SAVE_KEY = "falkenwacht.saveStates";
 const LAST_SAVE_KEY = "falkenwacht.lastSave";
+const LOAD_STATE_KEY = "falkenwacht.pendingLoad";
 const MAX_ACCOUNT_SAVES = 15;
 const MAX_CAMPAIGN_SAVES = 5;
 
@@ -394,14 +395,30 @@ export default function CampaignsPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <Link
+                          <button
                             className="inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-xs font-bold font-cinzel uppercase tracking-wide transition-all"
                             style={{ background: "rgba(212,175,55,0.15)", border: "1px solid rgba(212,175,55,0.35)", color: GOLD }}
-                            href={`/?scene=${saveState.sceneId}&character=${saveState.characterId}`}
+                            type="button"
+                            onClick={async () => {
+                              if (saveState.id.startsWith("backend-") && saveState.choiceLabel) {
+                                try {
+                                  const full = await getBackendSave(saveState.choiceLabel);
+                                  localStorage.setItem(LOAD_STATE_KEY, JSON.stringify({
+                                    slot_name: full.slot_name,
+                                    character_id: full.character_id,
+                                    scene_number: full.scene_number,
+                                    state: full.state,
+                                  }));
+                                } catch {
+                                  // fall through to scene-based navigation
+                                }
+                              }
+                              window.location.href = "/";
+                            }}
                           >
                             <Save className="size-3.5" />
                             Laden
-                          </Link>
+                          </button>
                           <button
                             className="inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-xs font-semibold transition-all text-slate-400 hover:text-red-300"
                             style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" }}

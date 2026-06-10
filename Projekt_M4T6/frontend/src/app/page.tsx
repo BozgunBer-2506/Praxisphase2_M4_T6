@@ -78,6 +78,7 @@ const getAmbientAudio = () => {
 const SAVE_KEY = "falkenwacht.saveStates";
 const LAST_SAVE_KEY = "falkenwacht.lastSave";
 const COMBAT_STATE_KEY = "falkenwacht.combatState";
+const LOAD_STATE_KEY = "falkenwacht.pendingLoad";
 const MAX_ACCOUNT_SAVES = 15;
 const MAX_CAMPAIGN_SAVES = 5;
 const CAMPAIGN_TITLE = "Falkenwacht - Die Korruption der Greifenstadt";
@@ -657,6 +658,60 @@ export default function Home() {
   }, [combatRoundState, combatAttackFlowState, selectedCombatTargetId]);
 
   useEffect(() => {
+    const pendingLoadRaw = window.localStorage.getItem(LOAD_STATE_KEY);
+    if (pendingLoadRaw) {
+      window.localStorage.removeItem(LOAD_STATE_KEY);
+      window.localStorage.removeItem(COMBAT_STATE_KEY);
+      try {
+        const pending = JSON.parse(pendingLoadRaw) as {
+          slot_name: string;
+          character_id: string;
+          scene_number: number;
+          state: {
+            main_character?: { current_hp?: number; max_hp?: number };
+            npc_companion?: { current_hp?: number; max_hp?: number };
+            inventory?: unknown[];
+          };
+        };
+        const charId = (pending.character_id === "ryu" || pending.character_id === "ayane")
+          ? (pending.character_id as CharacterId)
+          : null;
+        const sceneId = scenes[pending.scene_number - 1]?.id ?? null;
+        if (charId) setSelectedCharacterId(charId);
+        if (sceneId) setCurrentSceneId(sceneId);
+        const mc = pending.state?.main_character;
+        const comp = pending.state?.npc_companion;
+        if (mc || comp) {
+          setRuntimeStats((prev) => {
+            const next = { ...prev };
+            if (charId && mc) {
+              next[charId] = {
+                ...next[charId],
+                currentHp: mc.current_hp ?? next[charId].currentHp,
+                maxHp: mc.max_hp ?? next[charId].maxHp,
+              };
+            }
+            const companionId = charId === "ryu" ? "ayane" : charId === "ayane" ? "ryu" : null;
+            if (companionId && comp) {
+              next[companionId] = {
+                ...next[companionId],
+                currentHp: comp.current_hp ?? next[companionId].currentHp,
+                maxHp: comp.max_hp ?? next[companionId].maxHp,
+              };
+            }
+            return next;
+          });
+        }
+        if (Array.isArray(pending.state?.inventory)) {
+          setInventoryState(pending.state.inventory as typeof inventoryState);
+        }
+        setSaveRestored(true);
+        return;
+      } catch {
+        // corrupt data - fall through
+      }
+    }
+
     const params = new URLSearchParams(window.location.search);
 
     if (params.get("newgame") === "1") {
@@ -1948,7 +2003,8 @@ export default function Home() {
       !activeCombatActor ||
       !selectedCombatTarget ||
       !combatAttackFlowState.actionName ||
-      isBackendTurnResolving
+      isBackendTurnResolving ||
+      requiresBackendDamageRoll
     ) {
       return;
     }
@@ -4803,22 +4859,6 @@ export default function Home() {
                                 combatAttackFlowState.step !== "turnResolved")))
                         }
                         onClick={() => {
-                          if (
-                            activeCombatActor?.kind === "enemy" &&
-                            combatAttackFlowState.step === "enemyResolving"
-                          ) {
-                            void resolveBackendCombatTurn();
-                            return;
-                          }
-
-                          if (
-                            activeCombatActor?.kind === "enemy" &&
-                            combatAttackFlowState.step === "turnResolved"
-                          ) {
-                            endPlayerCombatTurn();
-                            return;
-                          }
-
                           if (isEnemyTurn) {
                             void resolveBackendCombatTurn();
                             return;
@@ -4842,9 +4882,6 @@ export default function Home() {
                       >
                         {isBackendTurnResolving
                           ? "Attack Roll wird ausgewertet..."
-                          : activeCombatActor?.kind === "enemy" &&
-                              combatAttackFlowState.step === "turnResolved"
-                            ? "Weiter zum naechsten Zug"
                           : isEnemyTurn
                             ? "DM-Gegnerzug auswerten"
                             : combatAttackFlowState.step === "chooseAction"
@@ -4859,7 +4896,7 @@ export default function Home() {
                                     ? "Zug beenden"
                                 : selectedCombatTarget &&
                                     combatAttackFlowState.actionName
-                                  ? `3. Angriff würfeln (${combatAttackFlowState.attackFormula})`
+                                  ? `3. Angriff wuerfeln (${combatAttackFlowState.attackFormula})`
                                   : "Combat-Schritt offen"}
                       </button>
                       {combatAttackFlowState.attackTotal !== null ? (
