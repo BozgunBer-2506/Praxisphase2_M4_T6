@@ -844,6 +844,10 @@ export default function Home() {
   const selectedCombatTarget =
     availableCombatTargets.find((target) => target.id === selectedCombatTargetId) ??
     null;
+  const allEnemiesDead =
+    combatRoundState.round > 0 &&
+    combatRoundState.enemies.length > 0 &&
+    combatRoundState.enemies.every((e) => e.currentHp <= 0);
   const activeCombatSheet = (() => {
     if (!activeCombatActor) return null;
     const isMainCharacter = activeCombatActor.id === selectedCharacterId || activeCombatActor.id === activeCharacter?.id;
@@ -3976,18 +3980,33 @@ export default function Home() {
                           : "Turn wird vom Backend geprueft"}
                     </p>
                   ) : null}
-                  <button
-                    className="mt-2 w-full rounded-md border border-ember-400/45 bg-ember-500/15 px-3 py-2 text-xs font-black text-ember-100 transition hover:border-ember-300 hover:bg-ember-500/25 disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={isBackendTurnResolving}
-                    onClick={() => resolveBackendCombatTurn()}
-                    type="button"
-                  >
-                    {isBackendTurnResolving
-                      ? "Backend rechnet..."
-                      : isEnemyTurn
-                        ? "Enemy-Turn aufloesen"
-                        : "Aktion abschliessen"}
-                  </button>
+                  {allEnemiesDead ? (
+                    <button
+                      className="mt-2 w-full rounded-md border border-green-400/60 bg-green-500/20 px-3 py-2 text-xs font-black text-green-200 transition hover:border-green-300 hover:bg-green-500/30"
+                      onClick={() => {
+                        window.localStorage.removeItem("falkenwacht.combatState");
+                        setCombatRoundState(createInitialCombatRoundState());
+                        setCombatAttackFlowState(createInitialCombatAttackFlowState());
+                        setSelectedCombatTargetId(null);
+                      }}
+                      type="button"
+                    >
+                      Sieg! Kampf beenden
+                    </button>
+                  ) : (
+                    <button
+                      className="mt-2 w-full rounded-md border border-ember-400/45 bg-ember-500/15 px-3 py-2 text-xs font-black text-ember-100 transition hover:border-ember-300 hover:bg-ember-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={isBackendTurnResolving}
+                      onClick={() => resolveBackendCombatTurn()}
+                      type="button"
+                    >
+                      {isBackendTurnResolving
+                        ? "Backend rechnet..."
+                        : isEnemyTurn
+                          ? "Enemy-Turn aufloesen"
+                          : "Aktion abschliessen"}
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex flex-col gap-1">
