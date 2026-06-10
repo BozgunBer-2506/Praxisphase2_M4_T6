@@ -35,7 +35,18 @@ export function getToken(): string | null {
 
 export function getUsername(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("username");
+  const stored = localStorage.getItem("username");
+  if (stored) return stored;
+  const token = getToken();
+  if (!token) return null;
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    const name = payload.username as string | undefined;
+    if (name) localStorage.setItem("username", name);
+    return name ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function getUserId(): number | null {
