@@ -457,6 +457,7 @@ export default function Home() {
   const [isActionsExpanded, setIsActionsExpanded] = useState(true);
   const [isInventoryExpanded, setIsInventoryExpanded] = useState(true);
   const [isCompanionExpanded, setIsCompanionExpanded] = useState(false);
+  const [showVictoryOverlay, setShowVictoryOverlay] = useState(false);
   const [inventoryState, setInventoryState] =
     useState<InventoryStateItem[]>(initialInventory);
   const [inventoryItems, setInventoryItems] = useState<InventoryViewItem[]>([]);
@@ -2752,8 +2753,92 @@ export default function Home() {
     visibleWordCount,
   ]);
 
+  const victoryOutcome = (() => {
+    if (!activeCharacter || !activeNpc) return null;
+    const mc = runtimeStats[activeCharacter.id];
+    const comp = runtimeStats[activeNpc.id];
+    const mcDead = mc.currentHp <= 0;
+    const compDead = comp.currentHp <= 0;
+    const mcPct = mc.currentHp / mc.maxHp;
+    const compPct = comp.currentHp / comp.maxHp;
+    if (mcDead && compDead) return {
+      type: "beide_tod" as const,
+      title: "Gefallen im Kampf",
+      subtitle: "Beide Helden wurden besiegt.",
+      text: `${activeCharacter.name} und ${activeNpc.name} konnten dem Hinterhalt nicht standhalten. Falkenwacht versinkt weiter in der Dunkelheit.`,
+      color: "#ef4444",
+    };
+    if (mcDead) return {
+      type: "spieler_tod" as const,
+      title: "Pyrrhussieg",
+      subtitle: `${activeCharacter.name} ist gefallen.`,
+      text: `${activeNpc.name} steht allein auf dem Schlachtfeld. ${activeCharacter.name} hat sein Leben gegeben, um den Weg freizumachen.`,
+      color: "#f97316",
+    };
+    if (compDead) return {
+      type: "begleiter_tod" as const,
+      title: "Teuer erkauft",
+      subtitle: `${activeNpc.name} ist gefallen.`,
+      text: `${activeCharacter.name} hat überlebt, doch ${activeNpc.name} hat den höchsten Preis bezahlt.`,
+      color: "#f97316",
+    };
+    const avgPct = (mcPct + compPct) / 2;
+    if (avgPct < 0.35) return {
+      type: "schwer_verletzt" as const,
+      title: "Sieg – Schwer erkämpft",
+      subtitle: "Beide Helden schwer verwundet.",
+      text: `${activeCharacter.name} (${mc.currentHp}/${mc.maxHp} HP) und ${activeNpc.name} (${comp.currentHp}/${comp.maxHp} HP) stehen zitternd auf dem Schlachtfeld. Der Sieg war teuer.`,
+      color: "#d4af37",
+    };
+    if (avgPct < 0.7) return {
+      type: "leicht_verletzt" as const,
+      title: "Sieg!",
+      subtitle: "Mit einigen Wunden davongekommen.",
+      text: `${activeCharacter.name} (${mc.currentHp}/${mc.maxHp} HP) und ${activeNpc.name} (${comp.currentHp}/${comp.maxHp} HP) haben die Shadow Raiders bezwungen.`,
+      color: "#d4af37",
+    };
+    return {
+      type: "unverletzt" as const,
+      title: "Glänzender Sieg!",
+      subtitle: "Ohne schwere Verluste.",
+      text: `${activeCharacter.name} und ${activeNpc.name} haben den Hinterhalt überstanden – fast ohne Kratzer. Die Shadow Raiders liegen besiegt.`,
+      color: "#d4af37",
+    };
+  })();
+
   return (
     <div className="h-dvh flex flex-col overflow-hidden text-white" style={{background: '#050505'}}>
+      {showVictoryOverlay && victoryOutcome && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center px-6" style={{background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(12px)'}}>
+          <div className="w-full max-w-sm rounded-xl border p-6 text-center" style={{borderColor: `${victoryOutcome.color}40`, background: 'rgba(8,8,8,0.97)'}}>
+            <p className="text-[0.62rem] font-bold uppercase tracking-[0.28em] text-slate-500 font-cinzel">Kampf beendet</p>
+            <h1 className="mt-3 text-2xl font-black font-cinzel" style={{color: victoryOutcome.color}}>
+              {victoryOutcome.title}
+            </h1>
+            <p className="mt-1 text-sm font-semibold text-slate-300">{victoryOutcome.subtitle}</p>
+            <p className="mt-4 text-[0.75rem] leading-relaxed text-slate-400">{victoryOutcome.text}</p>
+            <div className="mt-6 rounded-md border border-white/10 bg-white/[0.04] px-4 py-3">
+              <p className="text-[0.6rem] font-bold uppercase tracking-[0.24em] text-slate-500 font-cinzel">Weitere Story</p>
+              <p className="mt-1 text-sm font-black text-slate-200">To be continued...</p>
+              <p className="mt-0.5 text-[0.65rem] text-slate-500">Falkenwacht – Die Korruption der Greifenstadt</p>
+            </div>
+            <button
+              className="mt-6 w-full rounded-md px-4 py-3 text-sm font-black font-cinzel uppercase tracking-wide transition"
+              style={{background: `${victoryOutcome.color}22`, border: `1px solid ${victoryOutcome.color}55`, color: victoryOutcome.color}}
+              onClick={() => {
+                setShowVictoryOverlay(false);
+                window.localStorage.removeItem("falkenwacht.combatState");
+                setCombatRoundState(createInitialCombatRoundState());
+                setCombatAttackFlowState(createInitialCombatAttackFlowState());
+                setSelectedCombatTargetId(null);
+              }}
+              type="button"
+            >
+              Zurück zur Szene
+            </button>
+          </div>
+        </div>
+      )}
       {/* HEADER */}
       <header className="relative flex-none h-14 flex items-center px-3 gap-2 border-b border-white/[0.08] z-40" style={{background: 'rgba(8,8,8,0.97)', backdropFilter: 'blur(20px)'}}>
         {/* Left: logo + nav links */}
@@ -4102,10 +4187,7 @@ export default function Home() {
                       className="mt-2 w-full rounded-md border border-green-400/60 bg-green-500/20 px-3 py-2 text-xs font-black text-green-200 transition hover:border-green-300 hover:bg-green-500/30"
                       onClick={() => {
                         void finishEncounter(getBackendSlotName()).catch(() => null);
-                        window.localStorage.removeItem("falkenwacht.combatState");
-                        setCombatRoundState(createInitialCombatRoundState());
-                        setCombatAttackFlowState(createInitialCombatAttackFlowState());
-                        setSelectedCombatTargetId(null);
+                        setShowVictoryOverlay(true);
                       }}
                       type="button"
                     >
