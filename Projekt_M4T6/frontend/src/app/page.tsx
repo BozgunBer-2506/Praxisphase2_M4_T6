@@ -452,7 +452,7 @@ export default function Home() {
   const [rollAnimationKey, setRollAnimationKey] = useState(0);
   const [d20TriggerKey, setD20TriggerKey] = useState(0);
   const [diceColor, setDiceColor] = useState<DiceColor>("arcane");
-  const [isSheetExpanded, setIsSheetExpanded] = useState(false);
+  const [isSheetExpanded, setIsSheetExpanded] = useState(true);
   const [isSkillsExpanded, setIsSkillsExpanded] = useState(true);
   const [isActionsExpanded, setIsActionsExpanded] = useState(true);
   const [isInventoryExpanded, setIsInventoryExpanded] = useState(true);
@@ -3019,14 +3019,24 @@ export default function Home() {
                 <div className="px-3 py-3 border-b border-white/[0.07] shrink-0">
                   <div className="grid grid-cols-2 gap-2">
                     {/* Hauptcharakter */}
-                    <div className="rounded-lg overflow-hidden" style={{border: '1px solid rgba(212,175,55,0.45)', boxShadow: '0 0 12px rgba(212,175,55,0.1)'}}>
+                    <div className="rounded-lg overflow-hidden" style={{border: `1px solid ${isSheetExpanded ? 'rgba(212,175,55,0.45)' : 'rgba(212,175,55,0.2)'}`, boxShadow: '0 0 12px rgba(212,175,55,0.1)'}}>
                       <div className="h-28 bg-gradient-to-b from-white/5 to-black/70 flex items-end justify-center relative">
                         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/50" />
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img alt={activeCharacter.name} className="relative z-10 max-h-28 w-auto object-contain drop-shadow-xl" src={activeCharacter.modelImageUrl} style={{filter: 'drop-shadow(0 0 8px rgba(212,175,55,0.25))'}} />
                       </div>
                       <div className="px-2 py-1.5" style={{background: 'rgba(0,0,0,0.4)'}}>
-                        <p className="text-[0.6rem] font-bold text-slate-100 truncate font-cinzel">{activeCharacter.name}</p>
+                        <div className="flex items-center justify-between mb-0.5">
+                          <p className="text-[0.6rem] font-bold text-slate-100 truncate font-cinzel">{activeCharacter.name}</p>
+                          <button
+                            aria-label="Hauptcharakter-Sheet umschalten"
+                            className="grid size-4 shrink-0 place-items-center rounded border border-white/10 bg-white/[0.06] text-slate-300 transition hover:border-ember-400/70"
+                            onClick={() => setIsSheetExpanded((e) => !e)}
+                            type="button"
+                          >
+                            <ChevronDown className={`size-3 transition ${isSheetExpanded ? "rotate-180" : ""}`} />
+                          </button>
+                        </div>
                         <p className="text-[0.52rem] text-slate-500 mb-1.5 truncate">{activeCharacter.className}</p>
                         <div className="flex items-center justify-between mb-0.5">
                           <span className="text-[0.52rem] text-red-400 font-cinzel">TP</span>
@@ -3142,8 +3152,8 @@ export default function Home() {
                   ) : null}
                 </div>
 
-                {/* Skills */}
-                <div className="px-3 py-3 flex-1 overflow-y-auto">
+                {/* Skills + Details - only visible when main char is expanded */}
+                {isSheetExpanded ? <div className="px-3 py-3 flex-1 overflow-y-auto">
                   <div className="flex items-center gap-1.5 mb-2.5">
                     <div className="flex-1 h-px" style={{background: 'rgba(212,175,55,0.2)'}} />
                     <p className="text-[0.62rem] font-bold uppercase tracking-[0.28em] text-slate-300 font-cinzel">Fertigkeiten</p>
@@ -3207,20 +3217,11 @@ export default function Home() {
                       })}
                     </div>
                   ) : null}
-                </div>
+                </div> : null}
 
-                {/* Details + expanded sheet */}
-                <div className="px-4 py-3 border-t border-white/[0.07] shrink-0">
-                  <button
-                    className="w-full rounded py-2 text-[0.65rem] font-semibold text-slate-500 border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05] transition-colors flex items-center justify-center gap-1.5 font-cinzel uppercase tracking-wider"
-                    onClick={() => setIsSheetExpanded((e) => !e)}
-                    type="button"
-                  >
-                    Details anzeigen <ChevronDown className={`w-3 h-3 transition ${isSheetExpanded ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {isSheetExpanded && activeSheet ? (
-                    <div className="mt-3 space-y-3">
+                {/* Details - visible when main char expanded */}
+                {isSheetExpanded && activeSheet ? (
+                  <div className="px-4 py-3 border-t border-white/[0.07] shrink-0 space-y-3">
                       <div>
                         <p className="text-[0.62rem] uppercase tracking-wider text-slate-400 mb-1.5 font-cinzel tracking-[0.2em]">Aktionen</p>
                         <div className="space-y-1.5">
@@ -3278,7 +3279,6 @@ export default function Home() {
                       </div>
                     </div>
                   ) : null}
-                </div>
 
                 {/* Bottom chat bar */}
                 <div className="flex items-center gap-2 px-4 py-3 border-t border-white/[0.07] shrink-0">
