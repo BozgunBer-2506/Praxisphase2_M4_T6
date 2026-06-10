@@ -383,3 +383,10 @@ export async function resolveSaveEncounterDamageRoll(slotName: string) {
     },
   );
 }
+
+export async function finishEncounter(slotName: string) {
+  return request<{ status: string; slot_name: string }>(
+    `/saves/${encodeURIComponent(slotName)}/encounter/finish`,
+    { method: "POST", body: {} },
+  );
+}

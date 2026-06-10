@@ -986,6 +986,27 @@ def get_persisted_encounter(slot_name: str, db: Session = Depends(get_db)):
     }
 
 
+@app.post("/saves/{slot_name}/encounter/finish")
+def finish_encounter(slot_name: str, db: Session = Depends(get_db)):
+    save_game = db.query(SaveGame).filter(SaveGame.slot_name == slot_name).first()
+    if not save_game:
+        raise HTTPException(status_code=404, detail="Save game not found")
+    encounter_state = (save_game.state or {}).get("encounter")
+    if encounter_state:
+        save_game.state = {**save_game.state, "encounter": {**encounter_state, "combat_finished": True}}
+        flag_modified(save_game, "state")
+    encounter = (
+        db.query(Encounter)
+        .filter(Encounter.save_game_id == save_game.id)
+        .order_by(Encounter.id.desc())
+        .first()
+    )
+    if encounter:
+        encounter.combat_finished = True
+    db.commit()
+    return {"status": "finished", "slot_name": slot_name}
+
+
 @app.get("/saves/{slot_name}/encounter/turn-logs")
 def get_persisted_encounter_turn_logs(slot_name: str, db: Session = Depends(get_db)):
     save_game = db.query(SaveGame).filter(SaveGame.slot_name == slot_name).first()

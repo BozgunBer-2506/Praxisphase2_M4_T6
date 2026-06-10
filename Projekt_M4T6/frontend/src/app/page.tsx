@@ -41,6 +41,7 @@ import {
   getInventoryView,
   listBackendSaves,
   resolveCombat,
+  finishEncounter,
   resolveSaveEncounterAttackRoll,
   resolveSaveEncounterAutoTurn,
   resolveSaveEncounterDamageRoll,
@@ -3985,6 +3986,7 @@ export default function Home() {
                     <button
                       className="mt-2 w-full rounded-md border border-green-400/60 bg-green-500/20 px-3 py-2 text-xs font-black text-green-200 transition hover:border-green-300 hover:bg-green-500/30"
                       onClick={() => {
+                        void finishEncounter(getBackendSlotName()).catch(() => null);
                         window.localStorage.removeItem("falkenwacht.combatState");
                         setCombatRoundState(createInitialCombatRoundState());
                         setCombatAttackFlowState(createInitialCombatAttackFlowState());
