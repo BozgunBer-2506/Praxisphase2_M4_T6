@@ -438,6 +438,7 @@ export default function Home() {
   const [dialogueLineIndex, setDialogueLineIndex] = useState(0);
   const [visibleWordCount, setVisibleWordCount] = useState(0);
   const [isDmPanelOpen, setIsDmPanelOpen] = useState(false);
+  const [isRulebookOpen, setIsRulebookOpen] = useState(false);
   const [isDicePanelOpen, setIsDicePanelOpen] = useState(false);
   const [isLogPanelOpen, setIsLogPanelOpen] = useState(false);
   const [dmInput, setDmInput] = useState("");
@@ -2713,7 +2714,7 @@ export default function Home() {
           {/* Action buttons */}
           {([
             {icon: Dice5, label: 'Würfeln', onClick: () => setD20TriggerKey(k => k+1)},
-            {icon: BookOpen, label: 'Regelwerk', onClick: () => setIsDmPanelOpen((o: boolean) => !o)},
+            {icon: BookOpen, label: 'Regelwerk', onClick: () => setIsRulebookOpen((o: boolean) => !o)},
             {icon: ClipboardList, label: 'Log', onClick: () => setIsLogPanelOpen((o: boolean) => !o)},
           ] as const).map(({icon: Icon, label, onClick}) => (
             <button
@@ -4137,6 +4138,48 @@ export default function Home() {
               </aside>
             ) : null}
 
+            {isRulebookOpen ? (
+              <aside className="absolute right-3 top-3 z-20 flex max-h-[28rem] w-[min(22rem,calc(100%-1.5rem))] flex-col rounded-md border border-sky-400/30 bg-ink-950/95 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-white/10 p-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-sky-300">D&amp;D 5e Schnellreferenz</p>
+                    <h2 className="text-sm font-bold">Regelwerk</h2>
+                  </div>
+                  <button aria-label="Regelwerk schließen" className="grid size-8 place-items-center rounded-md border border-white/10 bg-white/10" onClick={() => setIsRulebookOpen(false)} type="button">
+                    <X className="size-4" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-3 text-[0.72rem] text-slate-300">
+                  <div>
+                    <p className="text-[0.65rem] uppercase tracking-widest text-sky-400 mb-1">Angriff</p>
+                    <p>Angriffswurf: 1d20 + Modifikator vs. RK (AC)</p>
+                    <p className="text-slate-500 mt-0.5">Natural 20 = Kritischer Treffer (doppelter Schaden)</p>
+                    <p className="text-slate-500">Natural 1 = Automatischer Fehler</p>
+                  </div>
+                  <div>
+                    <p className="text-[0.65rem] uppercase tracking-widest text-sky-400 mb-1">Aktionen (Kampfrunde)</p>
+                    <p>1 Aktion, 1 Bonusaktion, 1 Reaktion</p>
+                    <p className="text-slate-500 mt-0.5">Bewegung = Geschwindigkeit (Speed) in Fuß</p>
+                  </div>
+                  <div>
+                    <p className="text-[0.65rem] uppercase tracking-widest text-sky-400 mb-1">Fähigkeitswürfe</p>
+                    <p>1d20 + Modifikator vs. Schwierigkeitsgrad (SG)</p>
+                    <p className="text-slate-500 mt-0.5">SG 10 = Einfach, 15 = Mittel, 20 = Schwer</p>
+                  </div>
+                  <div>
+                    <p className="text-[0.65rem] uppercase tracking-widest text-sky-400 mb-1">Rettungswürfe</p>
+                    <p>1d20 + Rettungswurfbonus vs. SG des Effekts</p>
+                  </div>
+                  <div>
+                    <p className="text-[0.65rem] uppercase tracking-widest text-sky-400 mb-1">Zustände</p>
+                    <p>Besiegt = 0 TP, aus dem Kampf</p>
+                    <p className="text-slate-500 mt-0.5">Vorteil = 2x würfeln, höheren nehmen</p>
+                    <p className="text-slate-500">Nachteil = 2x würfeln, niedrigeren nehmen</p>
+                  </div>
+                </div>
+              </aside>
+            ) : null}
+
             {!isCombatScene && pendingCheck ? (
               <div className="absolute left-1/2 top-4 z-30 w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 rounded-md border border-ember-400/60 bg-ink-950/95 p-3 text-center shadow-glow">
                 <p className="text-xs uppercase tracking-[0.18em] text-ember-300">
@@ -4308,7 +4351,7 @@ export default function Home() {
                 <div className="grid grid-cols-2 gap-2">
                   {([
                     {icon: Dice5, label: 'Würfeln', sub: 'W20', color: '#d4af37', onClick: () => setD20TriggerKey(k => k+1)},
-                    {icon: BookOpen, label: 'Nachschlagen', sub: 'Regelwerk', color: '#94a3b8', onClick: () => setIsDmPanelOpen((o: boolean) => !o)},
+                    {icon: BookOpen, label: 'Nachschlagen', sub: 'Regelwerk', color: '#94a3b8', onClick: () => setIsRulebookOpen((o: boolean) => !o)},
                     {icon: Search, label: 'Untersuchen', sub: 'Umgebung', color: '#94a3b8', onClick: undefined},
                     {icon: HandMetal, label: 'Interagieren', sub: 'Objekt / NSC', color: '#94a3b8', onClick: undefined},
                   ] as const).map(({icon: Icon, label, sub, color, onClick}) => (
