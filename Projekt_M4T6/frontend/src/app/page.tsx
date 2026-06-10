@@ -1283,7 +1283,7 @@ export default function Home() {
           participantId: participant.participant_id,
           name: frontendCharacterId
             ? characters[frontendCharacterId].name
-            : "Schattenräuber",
+            : participant.participant_id.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
           kind: isEnemy ? "enemy" : "player",
           side: participant.side,
           currentHp: participant.current_hp,
@@ -3281,7 +3281,7 @@ export default function Home() {
                       AC {companionRuntimeStats!.ac}
                     </span>
                     <span className="rounded bg-white/[0.06] px-1 py-1 text-[0.62rem] font-bold text-slate-100">
-                      SP {activeNpc!.stats.speed}
+                      GES {activeNpc!.stats.speed}ft
                     </span>
                     <span className="rounded bg-white/[0.06] px-1 py-1 text-[0.62rem] font-bold text-slate-100">
                       INI +{activeNpc!.stats.initiative}
@@ -3993,15 +3993,17 @@ export default function Home() {
                   ) : (
                     <button
                       className="mt-2 w-full rounded-md border border-ember-400/45 bg-ember-500/15 px-3 py-2 text-xs font-black text-ember-100 transition hover:border-ember-300 hover:bg-ember-500/25 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={isBackendTurnResolving}
+                      disabled={isBackendTurnResolving || (!isEnemyTurn && requiresBackendDamageRoll)}
                       onClick={() => resolveBackendCombatTurn()}
                       type="button"
                     >
                       {isBackendTurnResolving
                         ? "Backend rechnet..."
-                        : isEnemyTurn
-                          ? "Enemy-Turn aufloesen"
-                          : "Aktion abschliessen"}
+                        : !isEnemyTurn && requiresBackendDamageRoll
+                          ? "Schaden wuerfeln zuerst"
+                          : isEnemyTurn
+                            ? "Enemy-Turn aufloesen"
+                            : "Aktion abschliessen"}
                     </button>
                   )}
                 </div>

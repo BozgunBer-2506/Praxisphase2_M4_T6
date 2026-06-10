@@ -124,7 +124,7 @@ export const getCombatActorDisplayName = (
 export const createInitialCombatEnemies = (): EnemyCombatState[] => [
   {
     id: "shadow-raider-1",
-    name: "Schattenraeuber A",
+    name: "Shadow Raider 1",
     currentHp: 16,
     maxHp: 16,
     ac: 14,
@@ -133,7 +133,7 @@ export const createInitialCombatEnemies = (): EnemyCombatState[] => [
   },
   {
     id: "shadow-raider-2",
-    name: "Schattenraeuber B",
+    name: "Shadow Raider 2",
     currentHp: 16,
     maxHp: 16,
     ac: 14,
@@ -142,7 +142,7 @@ export const createInitialCombatEnemies = (): EnemyCombatState[] => [
   },
   {
     id: "shadow-raider-3",
-    name: "Schattenraeuber C",
+    name: "Shadow Raider 3",
     currentHp: 16,
     maxHp: 16,
     ac: 14,
