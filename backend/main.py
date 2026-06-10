@@ -1187,6 +1187,10 @@ def delete_save(slot_name: str, db: Session = Depends(get_db)):
     if not save_game:
         raise HTTPException(status_code=404, detail="Save game not found")
 
+    encounters = db.query(Encounter).filter(Encounter.save_game_id == save_game.id).all()
+    for encounter in encounters:
+        db.query(EncounterTurnLog).filter(EncounterTurnLog.encounter_id == encounter.id).delete()
+        db.delete(encounter)
     db.delete(save_game)
     db.commit()
     return {"status": "deleted", "slot_name": slot_name}
