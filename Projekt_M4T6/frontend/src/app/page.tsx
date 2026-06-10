@@ -819,8 +819,7 @@ export default function Home() {
       : null;
   const availableCombatTargets = (() => {
     const backendTargets = combatRoundState.turnControl?.availableTargets ?? [];
-    if (backendTargets.length > 0) return backendTargets;
-    return combatRoundState.enemies
+    const livingEnemies = combatRoundState.enemies
       .filter((e) => e.currentHp > 0)
       .map((e) => ({
         id: e.id,
@@ -834,6 +833,13 @@ export default function Home() {
         speed: e.speed,
         defeated: e.currentHp <= 0,
       }));
+    if (!isEnemyTurn) {
+      const enemyTargets = backendTargets.filter(
+        (t) => t.kind === "enemy" || t.side === "enemies",
+      );
+      return enemyTargets.length > 0 ? enemyTargets : livingEnemies;
+    }
+    return backendTargets.length > 0 ? backendTargets : livingEnemies;
   })();
   const selectedCombatTarget =
     availableCombatTargets.find((target) => target.id === selectedCombatTargetId) ??
