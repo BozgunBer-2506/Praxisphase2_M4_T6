@@ -424,6 +424,7 @@ class AiDmHelpRequest(BaseModel):
     rules_result: dict = Field(default_factory=dict)
     character_state: dict = Field(default_factory=dict)
     inventory: list[dict] = Field(default_factory=list)
+    combat_context: dict = Field(default_factory=dict)
 
 
 class AiDmHelpResponse(BaseModel):
@@ -1089,6 +1090,7 @@ def ai_dm_help(request: AiDmHelpRequest, db: Session = Depends(get_db)):
         rules_result=request.rules_result,
         character_state=character_state,
         inventory=inventory,
+        combat_context=dict(request.combat_context) if request.combat_context else None,
     )
 
 

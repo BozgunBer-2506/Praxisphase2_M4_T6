@@ -19,6 +19,7 @@ def build_ai_dm_help_response(
     rules_result: dict | None = None,
     character_state: dict | None = None,
     inventory: list[dict] | None = None,
+    combat_context: dict | None = None,
 ) -> dict:
     command = _normalize_help_command(message)
     if _contains_blocked_external_lore(message):
@@ -67,9 +68,17 @@ def build_ai_dm_help_response(
             topics=["recap", "state", "scene"],
         )
 
+    bedrock_answer = generate_ai_dm_help_answer(
+        message=message,
+        scene_context=scene_context or {},
+        rules_result=rules_result or {},
+        character_state=character_state or {},
+        inventory=inventory or [],
+        combat_context=combat_context,
+    )
     return _help_response(
         command="free_question",
-        answer=(
+        answer=bedrock_answer or (
             "Ich kann deine Frage beantworten, wenn sie sich auf die aktuelle Szene, Falkenwacht-Lore, "
             "sichtbare Backend-Regelergebnisse, DnD-5e-Grundmechanik oder Bedienung bezieht. "
             "Ich veraendere dabei keine HP, Wuerfe, Treffer, Schaden, Inventory oder Speicherstaende."
@@ -260,6 +269,87 @@ def generate_ai_dm_narration(
         import logging
         logging.getLogger(__name__).error("Bedrock error: %s", e)
         return fallback
+
+
+def build_ai_dm_help_prompt(
+    message: str,
+    scene_context: dict,
+    rules_result: dict,
+    character_state: dict,
+    inventory: list[dict],
+    combat_context: dict | None = None,
+) -> str:
+    combat_section = ""
+    if combat_context and combat_context.get("combat_active"):
+        enemies = combat_context.get("visible_enemies", [])
+        enemy_summary = ", ".join(
+            f"{e.get('name','?')} {e.get('currentHp','?')}/{e.get('maxHp','?')} HP"
+            for e in enemies
+        ) or "keine"
+        combat_section = (
+            "\nKampfkontext:\n"
+            f"- Aktiver Zug: {combat_context.get('active_turn', 'unbekannt')}\n"
+            f"- Naechster Schritt: {combat_context.get('next_required_step', 'unbekannt')}\n"
+            f"- Gegner: {enemy_summary}\n"
+            f"- Letzter Wurf: {combat_context.get('last_roll', 'keiner')}\n"
+            f"- Letzte Aktion: {combat_context.get('last_action', 'keine')}\n"
+        )
+        companion = combat_context.get("companion")
+        if companion:
+            combat_section += (
+                f"- Begleiter: {companion.get('name','?')} "
+                f"{companion.get('currentHp','?')}/{companion.get('maxHp','?')} HP\n"
+            )
+
+    return (
+        "Du bist der DM-Assistent fuer Falkenwacht, ein dunkles DnD-Visual-Novel.\n"
+        "Beantworte die Spielerfrage praezise auf Basis des sichtbaren Spielzustands.\n"
+        "Regeln: Du aenderst NICHTS - keine HP, Wuerfe, Schaden, Inventar, Saves.\n"
+        "Erfinde keine neuen Fakten. Antworte auf Deutsch, maximal 3 kurze Saetze.\n\n"
+        f"Szene: {scene_context.get('title', 'unbekannt')}\n"
+        f"Charakter-HP: {character_state.get('current_hp','?')}/{character_state.get('max_hp','?')}\n"
+        f"Inventar: {len(inventory)} Eintraege\n"
+        f"{combat_section}"
+        f"\nFrage: {message}\nAntwort:"
+    )
+
+
+def generate_ai_dm_help_answer(
+    message: str,
+    scene_context: dict,
+    rules_result: dict,
+    character_state: dict,
+    inventory: list[dict],
+    combat_context: dict | None = None,
+    model: str = DEFAULT_AI_MODEL,
+) -> str | None:
+    if not _BEDROCK_AVAILABLE:
+        return None
+
+    prompt = build_ai_dm_help_prompt(
+        message=message,
+        scene_context=scene_context,
+        rules_result=rules_result,
+        character_state=character_state,
+        inventory=inventory,
+        combat_context=combat_context,
+    )
+
+    try:
+        client = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 220,
+            "messages": [{"role": "user", "content": prompt}],
+        })
+        response = client.invoke_model(modelId=model, body=body)
+        result = json.loads(response["body"].read())
+        text = result["content"][0]["text"].strip()
+        return text if text else None
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("Bedrock help error: %s", e)
+        return None
 
 
 def _clean_ai_narration(narration: str, fallback: str) -> str:

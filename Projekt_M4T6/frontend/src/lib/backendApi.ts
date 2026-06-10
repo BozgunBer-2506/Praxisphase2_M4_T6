@@ -85,6 +85,7 @@ export type AiDmHelpRequest = {
   rules_result?: Record<string, unknown>;
   character_state?: Record<string, unknown>;
   inventory?: InventoryStateItem[];
+  combat_context?: Record<string, unknown>;
 };
 
 export type AiDmHelpResponse = {

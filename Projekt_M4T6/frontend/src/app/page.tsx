@@ -2572,6 +2572,19 @@ export default function Home() {
     setTimeout(() => dmMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
 
     try {
+      const activeCombatActorName = activeCombatActor
+        ? (activeCombatActor.name ?? activeCombatActor.id)
+        : null;
+      const nextRequiredStep = (() => {
+        if (!isCombatScene) return null;
+        if (combatAttackFlowState.step === "chooseAction") return "Aktion waehlen";
+        if (combatAttackFlowState.step === "chooseTarget") return "Ziel waehlen";
+        if (combatAttackFlowState.step === "awaitAttackRoll") return "Angriffswurf wuerfeln";
+        if (combatAttackFlowState.step === "awaitDamageRoll") return "Schadenwurf wuerfeln";
+        if (combatAttackFlowState.step === "turnResolved") return "Zug abschliessen";
+        if (combatAttackFlowState.step === "enemyResolving") return "Enemy-Zug aufloesen";
+        return null;
+      })();
       const response = await askAiDmHelp({
         message: trimmedInput,
         slot_name: getBackendSlotName(),
@@ -2586,6 +2599,29 @@ export default function Home() {
         },
         character_state: backendSaveState.main_character,
         inventory: inventoryState,
+        combat_context: {
+          combat_active: isCombatScene && combatRoundState.round > 0,
+          active_turn: activeCombatActorName,
+          next_required_step: nextRequiredStep,
+          visible_enemies: combatRoundState.enemies.map((e) => ({
+            name: e.name,
+            currentHp: e.currentHp,
+            maxHp: e.maxHp,
+            ac: e.ac,
+            defeated: e.currentHp <= 0,
+          })),
+          last_roll: rollResult
+            ? { formula: rollResult.formula, total: rollResult.total }
+            : null,
+          last_action: combatAttackFlowState.actionName,
+          companion: activeNpc
+            ? {
+                name: activeNpc.name,
+                currentHp: companionRuntimeStats?.currentHp ?? null,
+                maxHp: companionRuntimeStats?.maxHp ?? null,
+              }
+            : null,
+        },
       });
 
       setDmMessages((messages) => [
