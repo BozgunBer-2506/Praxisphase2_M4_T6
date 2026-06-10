@@ -3042,14 +3042,24 @@ export default function Home() {
                       </div>
                     </div>
                     {/* Begleiter */}
-                    <div className="rounded-lg overflow-hidden" style={{border: '1px solid rgba(255,255,255,0.1)'}}>
+                    <div className="rounded-lg overflow-hidden" style={{border: `1px solid ${isCompanionExpanded ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.1)'}`}}>
                       <div className="h-28 bg-gradient-to-b from-white/5 to-black/70 flex items-end justify-center relative">
                         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/50" />
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img alt={activeNpc.name} className="relative z-10 max-h-28 w-auto object-contain drop-shadow-xl" src={activeNpc.modelImageUrl} />
                       </div>
                       <div className="px-2 py-1.5" style={{background: 'rgba(0,0,0,0.4)'}}>
-                        <p className="text-[0.6rem] font-bold text-slate-100 truncate font-cinzel">{activeNpc.name}</p>
+                        <div className="flex items-center justify-between mb-0.5">
+                          <p className="text-[0.6rem] font-bold text-slate-100 truncate font-cinzel">{activeNpc.name}</p>
+                          <button
+                            aria-label="Begleiter-Sheet umschalten"
+                            className="grid size-4 shrink-0 place-items-center rounded border border-white/10 bg-white/[0.06] text-slate-300 transition hover:border-ember-400/70"
+                            onClick={() => setIsCompanionExpanded((e) => !e)}
+                            type="button"
+                          >
+                            <ChevronDown className={`size-3 transition ${isCompanionExpanded ? "rotate-180" : ""}`} />
+                          </button>
+                        </div>
                         <p className="text-[0.52rem] text-slate-500 mb-1.5 font-cinzel uppercase tracking-wide">Begleitung</p>
                         <div className="flex items-center justify-between mb-0.5">
                           <span className="text-[0.52rem] text-red-400 font-cinzel">TP</span>
@@ -3065,6 +3075,71 @@ export default function Home() {
                       </div>
                     </div>
                   </div>
+                  {isCompanionExpanded && companionSheet ? (
+                    <div className="mt-2 space-y-2">
+                      <button
+                        className="w-full rounded-md border border-ember-400/30 bg-ember-500/10 px-2 py-2 text-left text-xs transition hover:border-ember-400"
+                        onClick={() => rollFormula(`${activeNpc!.name} Initiative`, `1d20+${activeNpc!.stats.initiative}`, { initiativeCharacterId: activeNpc!.id })}
+                        type="button"
+                      >
+                        Initiative +{activeNpc!.stats.initiative}
+                      </button>
+                      <div className="grid grid-cols-2 gap-1">
+                        {companionSheet!.saves.map(([label, val]) => (
+                          <div className="flex items-center justify-between rounded bg-white/[0.04] px-2 py-1" key={label}>
+                            <span className="text-[0.6rem] uppercase tracking-wide text-slate-400">{label}</span>
+                            <span className="text-[0.65rem] font-bold text-slate-200">{val}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[0.62rem] uppercase tracking-[0.14em] text-slate-400">Aktionen</p>
+                        {companionSheet!.actions.map((action) => (
+                          <div className="rounded-md border border-white/10 bg-white/[0.05] p-2" key={action.name}>
+                            <p className="truncate text-xs font-bold">{action.name}</p>
+                            <div className="mt-1 grid grid-cols-2 gap-1">
+                              <button
+                                className="rounded-md border border-white/10 bg-white/[0.06] px-1 py-1.5 text-[0.65rem] transition hover:border-ember-400/70"
+                                onClick={() => {
+                                  if (isCombatScene && combatAttackFlowState.step === "awaitAttackRoll" && combatAttackFlowState.actionName === action.name && selectedCombatTarget) {
+                                    void rollCombatAttack();
+                                    return;
+                                  }
+                                  rollFormula(`${activeNpc!.name} ${action.name} Angriff`, `1d20+${action.attack}`);
+                                }}
+                                type="button"
+                              >
+                                <span className="block text-[0.55rem] uppercase tracking-[0.12em] text-slate-400">Hit</span>
+                                <span className="font-bold">+{action.attack}</span>
+                              </button>
+                              <button
+                                className="rounded-md border border-white/10 bg-white/[0.06] px-1 py-1.5 text-[0.65rem] transition hover:border-ember-400/70"
+                                onClick={() => rollFormula(`${activeNpc!.name} ${action.name} Schaden`, action.damage)}
+                                type="button"
+                              >
+                                <span className="block text-[0.55rem] uppercase tracking-[0.12em] text-slate-400">Damage</span>
+                                <span className="font-bold">{action.damage}</span>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {activeNpc!.inventory && activeNpc!.inventory.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-[0.62rem] uppercase tracking-[0.14em] text-slate-400">Inventar</p>
+                          {activeNpc!.inventory.map((item) => (
+                            <div className="flex items-center justify-between rounded bg-white/[0.04] px-2 py-1.5" key={item.name}>
+                              <div className="min-w-0">
+                                <p className="truncate text-[0.65rem] font-bold text-slate-200">{item.name}</p>
+                                {item.description && <p className="truncate text-[0.58rem] text-slate-500">{item.description}</p>}
+                              </div>
+                              <span className="ml-2 shrink-0 text-[0.6rem] font-bold text-slate-400">x{item.quantity}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
 
                 {/* Skills */}
@@ -3201,98 +3276,6 @@ export default function Home() {
                           <p className="text-[0.62rem] text-slate-400">Wird geladen...</p>
                         )}
                       </div>
-                    </div>
-                  ) : null}
-                </div>
-
-                {/* Companion section */}
-                <div className="border-t border-white/[0.07] shrink-0">
-                  <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg" style={{background: 'rgba(255,255,255,0.03)'}}>
-                    <div className="w-8 h-8 rounded overflow-hidden shrink-0 bg-black/40 flex items-end justify-center">
-                      <Image alt={activeNpc.name} className="object-contain" height={40} src={activeNpc.modelImageUrl} style={{width: 'auto', maxHeight: '2rem'}} width={32} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[0.65rem] font-bold text-slate-300 truncate font-cinzel">{activeNpc.name}</p>
-                      <p className="text-[0.62rem] text-slate-400 font-cinzel uppercase tracking-wider">Begleitung</p>
-                    </div>
-                    <div className="flex gap-1 shrink-0 text-[0.58rem] font-bold">
-                      <span className="rounded px-1 py-0.5 bg-red-500/15 text-red-200">{companionRuntimeStats.currentHp}/{companionRuntimeStats.maxHp}</span>
-                      <span className="rounded px-1 py-0.5 bg-white/5 text-slate-300">AC{companionRuntimeStats.ac}</span>
-                    </div>
-                    <button
-                      aria-label="Begleiter-Sheet umschalten"
-                      className="grid size-6 shrink-0 place-items-center rounded border border-white/10 bg-white/[0.06] text-slate-300 transition hover:border-ember-400/70"
-                      onClick={() => setIsCompanionExpanded((e) => !e)}
-                      type="button"
-                    >
-                      <ChevronDown className={`size-3.5 transition ${isCompanionExpanded ? "rotate-180" : ""}`} />
-                    </button>
-                  </div>
-                  {isCompanionExpanded && companionSheet ? (
-                    <div className="space-y-2 px-4 pb-3 pt-1">
-                      <button
-                        className="w-full rounded-md border border-ember-400/30 bg-ember-500/10 px-2 py-2 text-left text-xs transition hover:border-ember-400"
-                        onClick={() => rollFormula(`${activeNpc!.name} Initiative`, `1d20+${activeNpc!.stats.initiative}`, { initiativeCharacterId: activeNpc!.id })}
-                        type="button"
-                      >
-                        Initiative +{activeNpc!.stats.initiative}
-                      </button>
-                      <div className="grid grid-cols-2 gap-1">
-                        {companionSheet!.saves.map(([label, val]) => (
-                          <div className="flex items-center justify-between rounded bg-white/[0.04] px-2 py-1" key={label}>
-                            <span className="text-[0.6rem] uppercase tracking-wide text-slate-400">{label}</span>
-                            <span className="text-[0.65rem] font-bold text-slate-200">{val}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[0.62rem] uppercase tracking-[0.14em] text-slate-400">Aktionen</p>
-                        {companionSheet!.actions.map((action) => (
-                          <div className="rounded-md border border-white/10 bg-white/[0.05] p-2" key={action.name}>
-                            <p className="truncate text-xs font-bold">{action.name}</p>
-                            <div className="mt-1 grid grid-cols-2 gap-1">
-                              <button
-                                className="rounded-md border border-white/10 bg-white/[0.06] px-1 py-1.5 text-[0.65rem] transition hover:border-ember-400/70"
-                                onClick={() => {
-                                  if (isCombatScene && combatAttackFlowState.step === "awaitAttackRoll" && combatAttackFlowState.actionName === action.name && selectedCombatTarget) {
-                                    void rollCombatAttack();
-                                    return;
-                                  }
-                                  rollFormula(`${activeNpc!.name} ${action.name} Angriff`, `1d20+${action.attack}`);
-                                }}
-                                type="button"
-                              >
-                                <span className="block text-[0.55rem] uppercase tracking-[0.12em] text-slate-400">Hit</span>
-                                <span className="font-bold">+{action.attack}</span>
-                              </button>
-                              <button
-                                className="rounded-md border border-white/10 bg-white/[0.06] px-1 py-1.5 text-[0.65rem] transition hover:border-ember-400/70"
-                                onClick={() => rollFormula(`${activeNpc!.name} ${action.name} Schaden`, action.damage)}
-                                type="button"
-                              >
-                                <span className="block text-[0.55rem] uppercase tracking-[0.12em] text-slate-400">Damage</span>
-                                <span className="font-bold">{action.damage}</span>
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      {activeNpc!.inventory && activeNpc!.inventory.length > 0 && (
-                        <div className="space-y-1">
-                          <p className="text-[0.62rem] uppercase tracking-[0.14em] text-slate-400">Inventar</p>
-                          {activeNpc!.inventory.map((item) => (
-                            <div className="flex items-center justify-between rounded bg-white/[0.04] px-2 py-1.5" key={item.name}>
-                              <div className="min-w-0">
-                                <p className="truncate text-[0.65rem] font-bold text-slate-200">{item.name}</p>
-                                {item.description && (
-                                  <p className="truncate text-[0.58rem] text-slate-500">{item.description}</p>
-                                )}
-                              </div>
-                              <span className="ml-2 shrink-0 text-[0.6rem] font-bold text-slate-400">x{item.quantity}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
                     </div>
                   ) : null}
                 </div>
