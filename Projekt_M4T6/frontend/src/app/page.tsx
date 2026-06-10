@@ -2611,7 +2611,7 @@ export default function Home() {
             defeated: e.currentHp <= 0,
           })),
           last_roll: rollResult
-            ? { formula: rollResult.formula, total: rollResult.total }
+            ? { label: rollResult.label, total: rollResult.total }
             : null,
           last_action: combatAttackFlowState.actionName,
           companion: activeNpc
