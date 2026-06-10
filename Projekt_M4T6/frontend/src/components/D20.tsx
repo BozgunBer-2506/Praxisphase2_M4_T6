@@ -83,6 +83,7 @@ export default function D20({
   const pulseRef  = useRef(0);
   const raf       = useRef<number>(0);
   const busyRef   = useRef(false);
+  const rollGenRef = useRef(0);
   const lastTrigger = useRef<number | undefined>(rollTrigger);
   const targetValueRef = useRef<number | null | undefined>(targetValue);
   const [lastRoll, setLastRoll] = useState<number|null>(currentValue);
@@ -104,16 +105,13 @@ export default function D20({
   }, []);
 
   const startRoll = useCallback(() => {
-    if(busyRef.current) return;
     busyRef.current = true;
+    const gen = ++rollGenRef.current;
     const pending = targetValueRef.current;
     targetValueRef.current = null;
     const val = (pending !== null && pending !== undefined) ? pending : Math.floor(Math.random()*20)+1;
     const targetRy = ryForNumber(val);
-    // Spin 3-4 full rotations before landing
     const spins = 3 + Math.random();
-    const endRy = ryRef.current + spins*Math.PI*2 + (targetRy - ((ryRef.current + spins*Math.PI*2) % (Math.PI*2) + Math.PI*2) % (Math.PI*2));
-    // Simpler: just add rotations and offset
     const currentNorm = ((ryRef.current % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
     const targetNorm  = ((targetRy   % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
     let delta = targetNorm - currentNorm;
@@ -127,9 +125,10 @@ export default function D20({
       spawnBurst(W/2, H/2-8, W*0.31);
     }
 
-    targetNumRef.current = -1; // clear result during spin
+    targetNumRef.current = -1;
     animRef.current = { startRy: ryRef.current, endRy: end, elapsed:0, dur:1.8, target:val };
     setTimeout(()=>{
+      if(gen !== rollGenRef.current) return;
       busyRef.current = false;
       setLastRoll(val);
       onRoll(val);

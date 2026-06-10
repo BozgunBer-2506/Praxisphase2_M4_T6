@@ -679,6 +679,11 @@ export default function Home() {
       characterParam === "ryu" || characterParam === "ayane";
 
     if (hasValidSceneParam || hasValidCharacterParam) {
+      window.localStorage.removeItem(COMBAT_STATE_KEY);
+      setCombatRoundState(createInitialCombatRoundState());
+      setCombatAttackFlowState(createInitialCombatAttackFlowState());
+      setSelectedCombatTargetId(null);
+
       const matchingSaveState =
         hasValidSceneParam && hasValidCharacterParam
           ? findMatchingSaveState(sceneParam, characterParam)
@@ -760,7 +765,11 @@ export default function Home() {
     currentScene.id === "hinterhalt-handelsroute";
   const visibleInitiativeOrder =
     combatRoundState.initiativeOrder.length > 0
-      ? combatRoundState.initiativeOrder
+      ? combatRoundState.initiativeOrder.filter((actor) => {
+          if (actor.kind !== "enemy") return true;
+          const enemy = combatRoundState.enemies.find((e) => e.id === actor.id);
+          return !enemy || enemy.currentHp > 0;
+        })
       : initiativeOrder;
   const activeCombatActor = visibleInitiativeOrder.find(
     (actor) => actor.id === combatRoundState.activeActorId,
