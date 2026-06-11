@@ -2764,46 +2764,58 @@ export default function Home() {
     const compPct = comp.currentHp / comp.maxHp;
     if (mcDead && compDead) return {
       type: "beide_tod" as const,
-      title: "Gefallen im Kampf",
-      subtitle: "Beide Helden wurden besiegt.",
-      text: `${activeCharacter.name} und ${activeNpc.name} konnten dem Hinterhalt nicht standhalten. Falkenwacht versinkt weiter in der Dunkelheit.`,
+      title: "Game Over",
+      subtitle: "Ryu und Ayane sind gefallen.",
+      text: "Beginne ein neues Spiel.",
       color: "#ef4444",
+      image: "/images/aftermath/game-over.png",
+      gameOver: true,
     };
     if (mcDead) return {
       type: "spieler_tod" as const,
-      title: "Pyrrhussieg",
-      subtitle: `${activeCharacter.name} ist gefallen.`,
-      text: `${activeNpc.name} steht allein auf dem Schlachtfeld. ${activeCharacter.name} hat sein Leben gegeben, um den Weg freizumachen.`,
+      title: "Bitterer Sieg",
+      subtitle: `${activeCharacter.name} ist im Kampf gefallen.`,
+      text: `${activeNpc.name} hat den Hinterhalt überstanden. Die Schattenräuber wurden besiegt, doch der Verlust ist unermesslich.`,
       color: "#f97316",
+      image: "/images/aftermath/spieler-tod.png",
+      gameOver: false,
     };
     if (compDead) return {
       type: "begleiter_tod" as const,
-      title: "Teuer erkauft",
-      subtitle: `${activeNpc.name} ist gefallen.`,
-      text: `${activeCharacter.name} hat überlebt, doch ${activeNpc.name} hat den höchsten Preis bezahlt.`,
+      title: "Ein Bitterer Sieg",
+      subtitle: `${activeCharacter.name} hat den Kampf überlebt, doch ${activeNpc.name} ist gefallen.`,
+      text: "Die Schattenräuber wurden besiegt, aber der Preis war hoch.",
       color: "#f97316",
+      image: "/images/aftermath/begleiter-tod.png",
+      gameOver: false,
     };
     const avgPct = (mcPct + compPct) / 2;
     if (avgPct < 0.35) return {
       type: "schwer_verletzt" as const,
-      title: "Sieg – Schwer erkämpft",
-      subtitle: "Beide Helden schwer verwundet.",
-      text: `${activeCharacter.name} (${mc.currentHp}/${mc.maxHp} HP) und ${activeNpc.name} (${comp.currentHp}/${comp.maxHp} HP) stehen zitternd auf dem Schlachtfeld. Der Sieg war teuer.`,
+      title: "Kampf Geschafft",
+      subtitle: "Ihr habt überlebt, aber schwer verwundet.",
+      text: `Ihr habt den Kampf gewonnen, aber schwere Wunden davongetragen. Rastet euch aus und heilt eure Wunden, bevor ihr weiterzieht.`,
       color: "#d4af37",
+      image: "/images/aftermath/schwer-verletzt.png",
+      gameOver: false,
     };
     if (avgPct < 0.7) return {
       type: "leicht_verletzt" as const,
-      title: "Sieg!",
-      subtitle: "Mit einigen Wunden davongekommen.",
-      text: `${activeCharacter.name} (${mc.currentHp}/${mc.maxHp} HP) und ${activeNpc.name} (${comp.currentHp}/${comp.maxHp} HP) haben die Shadow Raiders bezwungen.`,
+      title: "Kampfsieg",
+      subtitle: "Ein harter, aber verdienter Sieg.",
+      text: `${activeCharacter.name} und ${activeNpc.name} haben die Schattenräuber besiegt. Der Sieg ist errungen, doch der Kampf hat seine Spuren hinterlassen.`,
       color: "#d4af37",
+      image: "/images/aftermath/leicht-verletzt.png",
+      gameOver: false,
     };
     return {
       type: "unverletzt" as const,
-      title: "Glänzender Sieg!",
-      subtitle: "Ohne schwere Verluste.",
-      text: `${activeCharacter.name} und ${activeNpc.name} haben den Hinterhalt überstanden – fast ohne Kratzer. Die Shadow Raiders liegen besiegt.`,
+      title: "Perfekter Sieg",
+      subtitle: `${activeCharacter.name} und ${activeNpc.name} haben den Hinterhalt makellos überstanden.`,
+      text: "Beide sind unverletzt. Alle Schattenräuber wurden besiegt.",
       color: "#d4af37",
+      image: "/images/aftermath/unverletzt.png",
+      gameOver: false,
     };
   })();
 
@@ -2837,32 +2849,48 @@ export default function Home() {
         </div>
       )}
       {showVictoryOverlay && victoryOutcome && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center px-6" style={{background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(12px)'}}>
-          <div className="w-full max-w-sm rounded-xl border p-6 text-center" style={{borderColor: `${victoryOutcome.color}40`, background: 'rgba(8,8,8,0.97)'}}>
-            <p className="text-[0.62rem] font-bold uppercase tracking-[0.28em] text-slate-500 font-cinzel">Kampf beendet</p>
-            <h1 className="mt-3 text-2xl font-black font-cinzel" style={{color: victoryOutcome.color}}>
+        <div className="absolute inset-0 z-50 overflow-hidden">
+          {/* Background image */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={victoryOutcome.image}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+            style={{filter: 'brightness(0.7)'}}
+          />
+          {/* Bottom gradient */}
+          <div className="absolute inset-0" style={{background: 'linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.15) 100%)'}} />
+          {/* Center content */}
+          <div className="absolute inset-0 flex flex-col items-center justify-end pb-16 px-8 text-center">
+            <div className="flex items-center gap-3 mb-3">
+              <div style={{width: 40, height: 1, background: `${victoryOutcome.color}80`}} />
+              <p className="text-[0.55rem] font-bold uppercase tracking-[0.3em] font-cinzel" style={{color: `${victoryOutcome.color}99`}}>Kampf beendet</p>
+              <div style={{width: 40, height: 1, background: `${victoryOutcome.color}80`}} />
+            </div>
+            <h1 className="text-4xl font-black font-cinzel uppercase tracking-wide drop-shadow-lg" style={{color: victoryOutcome.color, textShadow: `0 0 40px ${victoryOutcome.color}60`}}>
               {victoryOutcome.title}
             </h1>
-            <p className="mt-1 text-sm font-semibold text-slate-300">{victoryOutcome.subtitle}</p>
-            <p className="mt-4 text-[0.75rem] leading-relaxed text-slate-400">{victoryOutcome.text}</p>
-            <div className="mt-6 rounded-md border border-white/10 bg-white/[0.04] px-4 py-3">
-              <p className="text-[0.6rem] font-bold uppercase tracking-[0.24em] text-slate-500 font-cinzel">Weitere Story</p>
-              <p className="mt-1 text-sm font-black text-slate-200">To be continued...</p>
-              <p className="mt-0.5 text-[0.65rem] text-slate-500">Falkenwacht – Die Korruption der Greifenstadt</p>
-            </div>
+            <p className="mt-2 text-sm font-semibold text-slate-200 drop-shadow-md max-w-md">{victoryOutcome.subtitle}</p>
+            <p className="mt-2 text-xs text-slate-400 max-w-sm leading-relaxed">{victoryOutcome.text}</p>
             <button
-              className="mt-6 w-full rounded-md px-4 py-3 text-sm font-black font-cinzel uppercase tracking-wide transition"
-              style={{background: `${victoryOutcome.color}22`, border: `1px solid ${victoryOutcome.color}55`, color: victoryOutcome.color}}
+              className="mt-8 px-10 py-3 text-sm font-black font-cinzel uppercase tracking-widest transition hover:opacity-90 rounded"
+              style={{background: victoryOutcome.color, color: '#000'}}
               onClick={() => {
-                setShowVictoryOverlay(false);
-                window.localStorage.removeItem("falkenwacht.combatState");
-                setCombatRoundState(createInitialCombatRoundState());
-                setCombatAttackFlowState(createInitialCombatAttackFlowState());
-                setSelectedCombatTargetId(null);
+                if (victoryOutcome.gameOver) {
+                  window.localStorage.removeItem("falkenwacht.combatState");
+                  window.localStorage.removeItem("falkenwacht.saveStates");
+                  window.location.href = "/campaigns";
+                } else {
+                  setShowVictoryOverlay(false);
+                  window.localStorage.removeItem("falkenwacht.combatState");
+                  setCombatRoundState(createInitialCombatRoundState());
+                  setCombatAttackFlowState(createInitialCombatAttackFlowState());
+                  setSelectedCombatTargetId(null);
+                }
               }}
               type="button"
             >
-              Zurück zur Szene
+              {victoryOutcome.gameOver ? "Neues Spiel starten" : "To be continued"}
             </button>
           </div>
         </div>
