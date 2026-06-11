@@ -94,7 +94,7 @@ const WORD_REVEAL_MS = 35;
 const diceTypes = [4, 6, 8, 10, 12, 20, 100] as const;
 const getBackendSlotName = () => `autosave_${getUsername() ?? "guest"}`;
 const BACKEND_COMBAT_SCENE_NUMBER = 3;
-const BACKEND_MAX_SCENE_NUMBER = 3;
+const BACKEND_MAX_SCENE_NUMBER = 999;
 
 const createId = () =>
   globalThis.crypto?.randomUUID?.() ??
@@ -236,8 +236,6 @@ const characterSheets = {
     saves: [
       ["WIS", "+7"],
       ["CHA", "+3"],
-      ["CON", "+1"],
-      ["INT", "+1"],
     ],
     skills: [
       ["Acrobatics", "+0"],
@@ -281,6 +279,27 @@ const characterSheets = {
     ],
   },
 } as const;
+
+const SKILL_EN_TO_DE: Record<string, string> = {
+  Acrobatics: "Akrobatik",
+  "Animal Handling": "Tierführung",
+  Arcana: "Arkane Kunde",
+  Athletics: "Athletik",
+  Deception: "Täuschung",
+  History: "Geschichte",
+  Insight: "Motivation",
+  Intimidation: "Einschüchtern",
+  Investigation: "Nachforschung",
+  Medicine: "Medizin",
+  Nature: "Naturkunde",
+  Perception: "Wahrnehmung",
+  Performance: "Aufführen",
+  Persuasion: "Überzeugen",
+  Religion: "Religion",
+  "Sleight of Hand": "Fingerfertigkeit",
+  Stealth: "Heimlichkeit",
+  Survival: "Überleben",
+};
 
 type SaveState = {
   id: string;
@@ -944,6 +963,24 @@ export default function Home() {
     const companion = activeNpc ?? characters.ayane;
     const mainRuntime = runtimeStats[mainCharacter.id];
     const companionRuntime = runtimeStats[companion.id];
+    const getHeroAttack = (charId: string) => {
+      const sheet = characterSheets[charId as keyof typeof characterSheets];
+      if (!sheet?.actions.length) return undefined;
+      let action: (typeof sheet.actions)[number] = sheet.actions[0];
+      if (combatAttackFlowState.actorId === charId && combatAttackFlowState.actionName) {
+        const found = sheet.actions.find((a) => a.name === combatAttackFlowState.actionName);
+        if (found) action = found;
+      }
+      const formula = parseDiceFormula(action.damage);
+      if (!formula) return undefined;
+      return {
+        attack_modifier: action.attack,
+        target_ac: 14,
+        damage_dice_count: formula.diceCount,
+        damage_die_sides: formula.diceType,
+        damage_modifier: formula.modifier,
+      };
+    };
     const heroParticipants = [
       {
         participant_id: toBackendCharacterId(mainCharacter.id),
@@ -953,6 +990,7 @@ export default function Home() {
         defeated: mainRuntime.currentHp <= 0,
         armor_class: mainRuntime.ac,
         speed: mainRuntime.speed,
+        attack: getHeroAttack(mainCharacter.id),
       },
       {
         participant_id: toBackendCharacterId(companion.id),
@@ -962,6 +1000,7 @@ export default function Home() {
         defeated: companionRuntime.currentHp <= 0,
         armor_class: companionRuntime.ac,
         speed: companionRuntime.speed,
+        attack: getHeroAttack(companion.id),
       },
     ];
     const enemyParticipants = combatRoundState.enemies.map((enemy) => ({
@@ -1013,6 +1052,7 @@ export default function Home() {
   }, [
     activeCharacter,
     activeNpc,
+    combatAttackFlowState,
     combatRoundState,
     runtimeStats,
     visibleInitiativeOrder,
@@ -1704,7 +1744,9 @@ export default function Home() {
     const runChoiceCheck = (check: SkillCheck) => {
       const skillName = check.skill ?? check.ability;
       const skillModifier =
-        activeSheet?.skills.find(([label]) => label === skillName)?.[1] ?? "+0";
+        activeSheet?.skills.find(([label]) => label === skillName)?.[1] ??
+        activeSheet?.skills.find(([label]) => label === SKILL_EN_TO_DE[skillName])?.[1] ??
+        "+0";
 
       setPendingCheck({ choice, checks });
       setOpenChoiceCheckId(null);
@@ -1984,6 +2026,7 @@ export default function Home() {
               }
             : undefined;
 
+      await syncBackendSave();
       const response = await resolveSaveEncounterAutoTurn(
         getBackendSlotName(),
         action,
@@ -2033,6 +2076,7 @@ export default function Home() {
       let response: LegacySaveEncounterResolveResponse;
       let usedLegacyAutoTurn = false;
 
+      await syncBackendSave();
       try {
         response = (await resolveSaveEncounterAttackRoll(
           getBackendSlotName(),
@@ -2201,13 +2245,23 @@ export default function Home() {
       setD20TriggerKey((k) => k + 1);
       applyFrontendEncounterState(response.frontend_state);
       setSelectedCombatTargetId(null);
+      const newActiveActorId = response.frontend_state.activeActorId;
+      const resolutionBelongsToNewActor = resolution?.actorId === newActiveActorId;
+      const nextStepAfterDamage: CombatAttackFlowState["step"] = resolutionBelongsToNewActor
+        ? "turnResolved"
+        : response.frontend_state.turnControl?.requiresPlayerAction
+          ? "chooseAction"
+          : response.frontend_state.turnControl?.autoResolvable
+            ? "enemyResolving"
+            : "idle";
       setCombatAttackFlowState((currentState) => ({
         ...currentState,
-        actorId: resolution?.actorId ?? response.frontend_state.activeActorId,
-        targetId: resolution?.targetId ?? currentState.targetId,
-        damageTotal,
-        remainingHp,
-        step: "turnResolved",
+        actorId: newActiveActorId,
+        actionName: resolutionBelongsToNewActor ? currentState.actionName : null,
+        targetId: resolutionBelongsToNewActor ? (resolution?.targetId ?? currentState.targetId) : null,
+        damageTotal: resolutionBelongsToNewActor ? damageTotal : null,
+        remainingHp: resolutionBelongsToNewActor ? remainingHp : null,
+        step: nextStepAfterDamage,
       }));
       setCombatStatus(
         damageTotal !== null
@@ -2888,11 +2942,8 @@ export default function Home() {
                   window.localStorage.removeItem("falkenwacht.saveStates");
                   window.location.href = "/campaigns";
                 } else {
-                  setShowVictoryOverlay(false);
                   window.localStorage.removeItem("falkenwacht.combatState");
-                  setCombatRoundState(createInitialCombatRoundState());
-                  setCombatAttackFlowState(createInitialCombatAttackFlowState());
-                  setSelectedCombatTargetId(null);
+                  window.location.href = "/campaigns";
                 }
               }}
               type="button"
@@ -5002,9 +5053,9 @@ export default function Home() {
                           <div className="mt-1 grid gap-1.5">
                             {availableCombatTargets.map((target) => (
                               <button
-                                className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs font-semibold transition"
+                                className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs font-semibold transition hover:ring-1 hover:ring-amber-300/50"
                                 style={selectedCombatTargetId === target.id
-                                  ? {background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.45)', color: '#f0e6cc'}
+                                  ? {background: 'rgba(212,175,55,0.2)', border: '1px solid rgba(212,175,55,0.6)', color: '#f0e6cc'}
                                   : {background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#e2e8f0'}}
                                 key={target.id}
                                 onClick={() => {

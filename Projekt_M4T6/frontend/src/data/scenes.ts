@@ -84,8 +84,7 @@ export const characters: Record<CharacterId, Character> = {
     inventory: [
       { name: "Katana", quantity: 1, description: "1d8 Hiebschaden, Finesse" },
       { name: "Wurfmesser", quantity: 3, description: "1d4 Stichschaden, Wurfreichweite 20/60" },
-      { name: "Samurai-Rüstung", quantity: 1, description: "Mittlere Rüstung, AC 15" },
-      { name: "Reiseproviant", quantity: 5, description: "5 Tage Verpflegung" },
+      { name: "Kettenhemd", quantity: 1, description: "Mittlere Rüstung, AC 16" },
       { name: "Heilerkit", quantity: 1, description: "10 Anwendungen, 1W4+1 HP" },
     ],
   },
@@ -110,11 +109,7 @@ export const characters: Record<CharacterId, Character> = {
     },
     inventory: [
       { name: "Heiliges Symbol", quantity: 1, description: "Fokus für klerikale Zauber" },
-      { name: "Kampfstab", quantity: 1, description: "1d6 Wuchtschaden, Vielseitig 1d8" },
-      { name: "Kettenhemd", quantity: 1, description: "Mittlere Rüstung, AC 16" },
       { name: "Heilerkit", quantity: 2, description: "10 Anwendungen, 1W4+1 HP" },
-      { name: "Ritualkerzen", quantity: 5, description: "Für Ritualzauber benötigt" },
-      { name: "Reiseproviant", quantity: 5, description: "5 Tage Verpflegung" },
     ],
   },
 };

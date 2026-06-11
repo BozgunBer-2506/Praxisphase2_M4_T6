@@ -1154,8 +1154,7 @@ def create_or_update_save(request: SaveGameRequest, current_user: User | None = 
         raise HTTPException(status_code=404, detail="Main character not found")
     if request.state.npc_companion and request.state.npc_companion.character_id not in CHARACTERS:
         raise HTTPException(status_code=404, detail="NPC companion not found")
-    if request.scene_number not in SCENES:
-        raise HTTPException(status_code=404, detail="Scene not found")
+
 
     save_game = db.query(SaveGame).filter(SaveGame.slot_name == request.slot_name).first()
     if save_game:
