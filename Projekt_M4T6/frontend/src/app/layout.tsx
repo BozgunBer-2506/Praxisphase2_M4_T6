@@ -9,6 +9,10 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "sw
 export const metadata: Metadata = {
   title: "Falkenwacht",
   description: "AI-powered D&D 5e Visual Novel",
+  icons: {
+    icon: "/logo-eagle.png",
+    apple: "/logo-eagle.png",
+  },
 };
 
 export const viewport: Viewport = {

@@ -466,9 +466,7 @@ export default function Home() {
     "Inventory bereit, Backend-Abgleich ausstehend.",
   );
   const [combatTargetHp, setCombatTargetHp] = useState(20);
-  const [combatStatus, setCombatStatus] = useState(
-    "Trainingsziel bereit: AC 14, HP 20.",
-  );
+  const [combatStatus, setCombatStatus] = useState("");
   const [initiativeRolls, setInitiativeRolls] = useState<
     Partial<Record<CharacterId, number>>
   >({});
@@ -1919,7 +1917,9 @@ export default function Home() {
   };
 
   const resolveBackendCombatTurn = async (targetId?: string) => {
-    if (!activeCombatActor || isBackendTurnResolving) {
+    if (isBackendTurnResolving) return;
+    if (!activeCombatActor) {
+      setCombatStatus("Kampf-Status inkonsistent. Bitte starte ein neues Spiel.");
       return;
     }
 
@@ -5034,6 +5034,7 @@ export default function Home() {
                         style={{background: 'rgba(212,175,55,0.18)', border: '1px solid rgba(212,175,55,0.45)', color: '#f0e6cc', boxShadow: '0 0 12px rgba(212,175,55,0.15)'}}
                         disabled={
                           isBackendTurnResolving ||
+                          (!activeCombatActor && combatRoundState.round > 0) ||
                           (combatRoundState.turnControl?.requiresPlayerAction &&
                             ((combatAttackFlowState.step === "awaitAttackRoll" &&
                               (!selectedCombatTarget ||
@@ -5042,10 +5043,11 @@ export default function Home() {
                                 !canResolveBackendDamageRoll) ||
                               (combatAttackFlowState.step !== "awaitAttackRoll" &&
                                 combatAttackFlowState.step !== "awaitDamageRoll" &&
-                                combatAttackFlowState.step !== "turnResolved")))
+                                combatAttackFlowState.step !== "turnResolved" &&
+                                combatAttackFlowState.step !== "enemyResolving")))
                         }
                         onClick={() => {
-                          if (isEnemyTurn) {
+                          if (isEnemyTurn || combatAttackFlowState.step === "enemyResolving") {
                             void resolveBackendCombatTurn();
                             return;
                           }
@@ -5083,8 +5085,23 @@ export default function Home() {
                                 : selectedCombatTarget &&
                                     combatAttackFlowState.actionName
                                   ? `3. Angriff wuerfeln (${combatAttackFlowState.attackFormula})`
+                                  : combatAttackFlowState.step === "enemyResolving"
+                                    ? "DM-Gegnerzug auswerten"
                                   : "Combat-Schritt offen"}
                       </button>
+                      {!activeCombatActor && combatRoundState.round > 0 && (
+                        <button
+                          className="mt-2 w-full rounded-md px-3 py-2 text-xs font-black font-cinzel uppercase tracking-wide transition hover:opacity-90"
+                          style={{background: 'rgba(239,68,68,0.18)', border: '1px solid rgba(239,68,68,0.45)', color: '#fca5a5'}}
+                          onClick={() => {
+                            window.localStorage.removeItem("falkenwacht.combatState");
+                            window.location.href = "/campaigns";
+                          }}
+                          type="button"
+                        >
+                          Speicherstand zurücksetzen
+                        </button>
+                      )}
                       {combatAttackFlowState.attackTotal !== null ? (
                         <div className="mt-2 rounded-md border border-white/10 bg-black/30 px-2 py-2 text-xs text-slate-200">
                           <p className="font-black text-slate-100">
@@ -5262,7 +5279,7 @@ export default function Home() {
         </div>
 
       {/* Floating D20 — bottom-right of center column, beside the narrow dialogue box */}
-      <div className="fixed z-50" style={{bottom:'72px', right:'332px', filter:'drop-shadow(0 0 16px rgba(80,120,255,0.4))'}}>
+      <div className="fixed z-50" style={{bottom:'140px', right:'332px', filter:'drop-shadow(0 0 16px rgba(80,120,255,0.4))'}}>
         <D20Component
           currentValue={rollResult?.total ?? null}
           rollTrigger={d20TriggerKey}
