@@ -64,6 +64,7 @@ import {
 } from "@/lib/combatState";
 
 let _ambientAudio: HTMLAudioElement | null = null;
+let _ambientPlayRequested = false;
 const getAmbientAudio = () => {
   if (typeof window === "undefined") return null;
   if (!_ambientAudio) {
@@ -73,6 +74,13 @@ const getAmbientAudio = () => {
     _ambientAudio.playbackRate = 0.85;
   }
   return _ambientAudio;
+};
+const startAmbientOnce = () => {
+  if (_ambientPlayRequested) return;
+  _ambientPlayRequested = true;
+  const audio = getAmbientAudio();
+  if (!audio) return;
+  void audio.play().catch(() => { _ambientPlayRequested = false; });
 };
 
 const SAVE_KEY = "falkenwacht.saveStates";
@@ -589,7 +597,8 @@ export default function Home() {
       setMusicPlaying(false);
       userMutedRef.current = true;
     } else {
-      void audio.play();
+      _ambientPlayRequested = false;
+      startAmbientOnce();
       setMusicPlaying(true);
       userMutedRef.current = false;
     }
@@ -598,11 +607,9 @@ export default function Home() {
   useEffect(() => {
     const handleFirstInteraction = () => {
       if (userMutedRef.current) return;
+      startAmbientOnce();
       const audio = getAmbientAudio();
-      if (!audio) return;
-      if (audio.paused) {
-        void audio.play().then(() => setMusicPlaying(true)).catch(() => {});
-      }
+      if (audio) audio.addEventListener("playing", () => setMusicPlaying(true), { once: true });
     };
 
     const handleGlobalClick = (e: MouseEvent) => {
@@ -5279,7 +5286,7 @@ export default function Home() {
         </div>
 
       {/* Floating D20 — bottom-right of center column, beside the narrow dialogue box */}
-      <div className="fixed z-50" style={{bottom:'140px', right:'332px', filter:'drop-shadow(0 0 16px rgba(80,120,255,0.4))'}}>
+      <div className="fixed z-50" style={{bottom:'72px', right:'332px', filter:'drop-shadow(0 0 16px rgba(80,120,255,0.4))'}}>
         <D20Component
           currentValue={rollResult?.total ?? null}
           rollTrigger={d20TriggerKey}

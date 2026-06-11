@@ -306,7 +306,7 @@ export default function D20({
       title="Klicken zum Würfeln"
     >
       <canvas ref={canvasRef} style={{width:160,height:168,background:"transparent"}} />
-      <p className="text-[0.68rem] font-cinzel uppercase tracking-[0.2em] -mt-2" style={{color:"rgba(180,210,255,0.75)"}}>
+      <p className="text-[0.68rem] font-cinzel uppercase tracking-[0.2em] -mt-6" style={{color:"rgba(180,210,255,0.75)"}}>
         {lastRoll !== null ? <>Wurf: <span style={{color: lastRoll===20?'#a0c4ff':'#f0c040', fontWeight:900, fontSize:'0.82rem'}}>{lastRoll}</span></> : 'Würfeln'}
       </p>
     </div>
