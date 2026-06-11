@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, KeyRound, LockKeyhole, ShieldCheck, User, UserPlus } from "lucide-react";
+import { ArrowLeft, KeyRound, LockKeyhole, ShieldCheck, User } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -12,30 +12,25 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
-  async function handleLogin(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setStatusMsg(null);
     setLoading(true);
     try {
       await login(username, password);
       router.push("/campaigns");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Login fehlgeschlagen.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleRegister(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-    try {
-      await register(username, password);
-      router.push("/campaigns");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Registrierung fehlgeschlagen.");
+    } catch {
+      try {
+        setStatusMsg("Kein Account gefunden — wird registriert...");
+        await register(username, password);
+        router.push("/campaigns");
+      } catch (regErr) {
+        setStatusMsg(null);
+        setError(regErr instanceof Error ? regErr.message : "Anmeldung fehlgeschlagen.");
+      }
     } finally {
       setLoading(false);
     }
@@ -54,7 +49,7 @@ export default function LoginPage() {
               Zurück zur Szene
             </Link>
             <p className="mt-4 text-[0.65rem] uppercase tracking-[0.22em] font-cinzel" style={{color: 'rgba(212,175,55,0.8)'}}>
-              Falkenwacht Login
+              Falkenwacht
             </p>
             <h1 className="mt-1 text-3xl font-bold leading-tight font-cinzel">
               Zugang zum Kampagnenportal
@@ -78,14 +73,14 @@ export default function LoginPage() {
             <p className="text-[0.65rem] uppercase tracking-[0.18em] font-cinzel" style={{color: 'rgba(212,175,55,0.7)'}}>
               Account
             </p>
-            <h2 className="mt-1 text-2xl font-semibold font-cinzel">Einloggen</h2>
+            <h2 className="mt-1 text-2xl font-semibold font-cinzel">Anmelden</h2>
             <p className="mt-2 text-sm leading-relaxed text-slate-400">
-              Nach dem Login gelangst du in den Main-Bereich mit Kampagne,
-              Sessions und offenen Speicherständen.
+              Gib deinen Benutzernamen und ein Passwort ein. Bestehendes Konto wird eingeloggt,
+              neues Konto wird automatisch erstellt.
             </p>
           </div>
 
-          <form className="space-y-3" onSubmit={handleLogin}>
+          <form className="space-y-3" onSubmit={handleSubmit}>
             <label className="block">
               <span className="mb-1 block text-sm text-slate-300">Benutzername</span>
               <span className="flex items-center gap-2 rounded-md px-3 py-3" style={{background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)'}}>
@@ -120,13 +115,19 @@ export default function LoginPage() {
               </span>
             </label>
 
+            {statusMsg ? (
+              <div className="rounded-md px-3 py-2 text-sm" style={{background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.3)', color: '#f0e6cc'}}>
+                {statusMsg}
+              </div>
+            ) : null}
+
             {error ? (
               <div className="rounded-md px-3 py-2 text-sm" style={{background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5'}}>
                 {error}
               </div>
             ) : null}
 
-            <div className="grid gap-2 pt-1">
+            <div className="pt-1">
               <button
                 className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md text-sm font-bold transition disabled:opacity-50 font-cinzel uppercase tracking-wide"
                 disabled={loading}
@@ -134,18 +135,7 @@ export default function LoginPage() {
                 type="submit"
               >
                 <KeyRound className="size-4" />
-                {loading ? "Wird eingeloggt..." : "Einloggen"}
-              </button>
-
-              <button
-                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md text-sm font-semibold transition disabled:opacity-50"
-                disabled={loading}
-                onClick={handleRegister}
-                style={{background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', color: '#e2e8f0'}}
-                type="button"
-              >
-                <UserPlus className="size-4" />
-                {loading ? "Wird registriert..." : "Neuen Account registrieren"}
+                {loading ? "Wird angemeldet..." : "Spielen"}
               </button>
             </div>
           </form>
