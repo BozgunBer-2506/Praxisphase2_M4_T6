@@ -55,3 +55,6 @@ terraform.tfvars
 # Documents
 *.pdf
 PRESENTATION.md
+
+# Raw assets (already copied to frontend/public)
+Projekt_M4T6/images/
