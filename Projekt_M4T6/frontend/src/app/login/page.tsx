@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, KeyRound, LockKeyhole, ShieldCheck, User } from "lucide-react";
+import { ArrowLeft, KeyRound, LockKeyhole, UserPlus, User } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -8,84 +8,99 @@ import { login, register } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
+  const [tab, setTab] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [statusMsg, setStatusMsg] = useState<string | null>(null);
+
+  function switchTab(t: "login" | "register") {
+    setTab(t);
+    setUsername("");
+    setPassword("");
+    setError(null);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setStatusMsg(null);
     setLoading(true);
     try {
-      await login(username, password);
-      router.push("/campaigns");
-    } catch {
-      try {
-        setStatusMsg("Kein Account gefunden — wird registriert...");
+      if (tab === "login") {
+        await login(username, password);
+      } else {
         await register(username, password);
-        router.push("/campaigns");
-      } catch (regErr) {
-        setStatusMsg(null);
-        setError(regErr instanceof Error ? regErr.message : "Anmeldung fehlgeschlagen.");
       }
+      router.push("/campaigns");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehlgeschlagen.");
     } finally {
       setLoading(false);
     }
   }
 
+  const isLogin = tab === "login";
+
   return (
-    <main className="min-h-screen overflow-y-auto px-4 py-5 text-slate-50 sm:px-6 lg:px-8" style={{maxHeight: '100dvh'}}>
-      <section className="mx-auto flex min-h-[calc(100vh-2.5rem)] max-w-3xl flex-col gap-5">
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <Link
-              className="inline-flex items-center gap-2 text-sm text-slate-300 transition hover:text-slate-100"
-              href="/"
+    <main
+      className="flex min-h-screen items-center justify-center px-4 py-8 text-slate-50"
+      style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(212,175,55,0.06) 0%, transparent 60%), #06080f" }}
+    >
+      <div className="w-full max-w-sm">
+
+        <div className="mb-8 text-center">
+          <Link
+            className="inline-flex items-center gap-1.5 text-xs text-slate-500 transition hover:text-slate-300 mb-6"
+            href="/"
+          >
+            <ArrowLeft className="size-3" />
+            Zurück zur Szene
+          </Link>
+          <p className="text-[0.6rem] uppercase tracking-[0.25em] font-cinzel mb-1 mt-4" style={{ color: "rgba(212,175,55,0.75)" }}>
+            Falkenwacht
+          </p>
+          <h1 className="text-2xl font-bold font-cinzel">Kampagnenportal</h1>
+        </div>
+
+        <div className="rounded-xl shadow-2xl overflow-hidden" style={{ background: "rgba(8,10,28,0.95)", border: "1px solid rgba(255,255,255,0.08)" }}>
+
+          <div className="grid grid-cols-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+            <button
+              className="py-3.5 text-sm font-semibold font-cinzel uppercase tracking-wider transition"
+              style={isLogin
+                ? { color: "#d4af37", borderBottom: "2px solid #d4af37", background: "rgba(212,175,55,0.05)" }
+                : { color: "#64748b", borderBottom: "2px solid transparent", background: "transparent" }}
+              onClick={() => switchTab("login")}
+              type="button"
             >
-              <ArrowLeft className="size-4" />
-              Zurück zur Szene
-            </Link>
-            <p className="mt-4 text-[0.65rem] uppercase tracking-[0.22em] font-cinzel" style={{color: 'rgba(212,175,55,0.8)'}}>
-              Falkenwacht
-            </p>
-            <h1 className="mt-1 text-3xl font-bold leading-tight font-cinzel">
-              Zugang zum Kampagnenportal
-            </h1>
+              Einloggen
+            </button>
+            <button
+              className="py-3.5 text-sm font-semibold font-cinzel uppercase tracking-wider transition"
+              style={!isLogin
+                ? { color: "#d4af37", borderBottom: "2px solid #d4af37", background: "rgba(212,175,55,0.05)" }
+                : { color: "#64748b", borderBottom: "2px solid transparent", background: "transparent" }}
+              onClick={() => switchTab("register")}
+              type="button"
+            >
+              Registrieren
+            </button>
           </div>
-          <div className="flex items-center gap-2 rounded-md px-3 py-2" style={{background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.2)'}}>
-            <ShieldCheck className="size-4" style={{color: '#d4af37'}} />
+
+          <form className="p-6 space-y-4" onSubmit={handleSubmit}>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              {isLogin
+                ? "Melde dich mit deinem bestehenden Konto an."
+                : "Erstelle ein neues Konto, um deine Kampagne zu speichern."}
+            </p>
+
             <div>
-              <p className="text-[0.62rem] uppercase tracking-[0.18em] text-slate-400 font-cinzel">
-                Status
-              </p>
-              <p className="text-xs font-semibold text-slate-100">
-                Backend verbunden
-              </p>
-            </div>
-          </div>
-        </header>
-
-        <section className="rounded-md p-4 shadow-2xl" style={{background: 'rgba(4,6,22,0.85)', border: '1px solid rgba(255,255,255,0.08)'}}>
-          <div className="mb-5">
-            <p className="text-[0.65rem] uppercase tracking-[0.18em] font-cinzel" style={{color: 'rgba(212,175,55,0.7)'}}>
-              Account
-            </p>
-            <h2 className="mt-1 text-2xl font-semibold font-cinzel">Anmelden</h2>
-            <p className="mt-2 text-sm leading-relaxed text-slate-400">
-              Gib deinen Benutzernamen und ein Passwort ein. Bestehendes Konto wird eingeloggt,
-              neues Konto wird automatisch erstellt.
-            </p>
-          </div>
-
-          <form className="space-y-3" onSubmit={handleSubmit}>
-            <label className="block">
-              <span className="mb-1 block text-sm text-slate-300">Benutzername</span>
-              <span className="flex items-center gap-2 rounded-md px-3 py-3" style={{background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)'}}>
-                <User className="size-4 text-slate-400" />
+              <span className="mb-1.5 block text-xs font-medium text-slate-400">Benutzername</span>
+              <div className="flex items-center gap-2 rounded-lg px-3 py-2.5"
+                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                <User className="size-4 shrink-0 text-slate-500" />
                 <input
+                  autoComplete="username"
                   className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-600"
                   disabled={loading}
                   minLength={3}
@@ -95,52 +110,66 @@ export default function LoginPage() {
                   type="text"
                   value={username}
                 />
-              </span>
-            </label>
+              </div>
+            </div>
 
-            <label className="block">
-              <span className="mb-1 block text-sm text-slate-300">Passwort</span>
-              <span className="flex items-center gap-2 rounded-md px-3 py-3" style={{background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)'}}>
-                <LockKeyhole className="size-4 text-slate-400" />
+            <div>
+              <span className="mb-1.5 block text-xs font-medium text-slate-400">Passwort</span>
+              <div className="flex items-center gap-2 rounded-lg px-3 py-2.5"
+                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                <LockKeyhole className="size-4 shrink-0 text-slate-500" />
                 <input
+                  autoComplete={isLogin ? "current-password" : "new-password"}
                   className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-600"
                   disabled={loading}
-                  onChange={(e) => setPassword(e.target.value)}
                   minLength={6}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="Mind. 6 Zeichen"
                   required
                   type="password"
                   value={password}
                 />
-              </span>
-            </label>
-
-            {statusMsg ? (
-              <div className="rounded-md px-3 py-2 text-sm" style={{background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.3)', color: '#f0e6cc'}}>
-                {statusMsg}
               </div>
-            ) : null}
+            </div>
 
-            {error ? (
-              <div className="rounded-md px-3 py-2 text-sm" style={{background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5'}}>
+            {error && (
+              <div className="rounded-lg px-3 py-2 text-xs" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#fca5a5" }}>
                 {error}
               </div>
-            ) : null}
+            )}
 
-            <div className="pt-1">
+            <button
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg text-sm font-bold font-cinzel uppercase tracking-widest transition disabled:opacity-50 hover:opacity-90"
+              disabled={loading}
+              style={{ background: "rgba(212,175,55,0.18)", border: "1px solid rgba(212,175,55,0.5)", color: "#f0e6cc" }}
+              type="submit"
+            >
+              {isLogin ? (
+                <>
+                  <KeyRound className="size-4" />
+                  {loading ? "Wird eingeloggt..." : "Einloggen"}
+                </>
+              ) : (
+                <>
+                  <UserPlus className="size-4" />
+                  {loading ? "Wird registriert..." : "Konto erstellen"}
+                </>
+              )}
+            </button>
+
+            <p className="text-center text-xs text-slate-500">
+              {isLogin ? "Noch kein Konto? " : "Bereits registriert? "}
               <button
-                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md text-sm font-bold transition disabled:opacity-50 font-cinzel uppercase tracking-wide"
-                disabled={loading}
-                style={{background: 'rgba(212,175,55,0.18)', border: '1px solid rgba(212,175,55,0.45)', color: '#f0e6cc'}}
-                type="submit"
+                className="text-amber-400 hover:text-amber-300 transition"
+                onClick={() => switchTab(isLogin ? "register" : "login")}
+                type="button"
               >
-                <KeyRound className="size-4" />
-                {loading ? "Wird angemeldet..." : "Spielen"}
+                {isLogin ? "Jetzt registrieren" : "Einloggen"}
               </button>
-            </div>
+            </p>
           </form>
-        </section>
-      </section>
+        </div>
+      </div>
     </main>
   );
 }

@@ -5337,7 +5337,7 @@ export default function Home() {
         </div>
 
       {/* Floating D20 — bottom-right of center column, beside the narrow dialogue box */}
-      <div className="fixed z-50" style={{bottom:'72px', right:'332px', filter:'drop-shadow(0 0 16px rgba(80,120,255,0.4))'}}>
+      {!showVictoryOverlay && <div className="fixed z-50" style={{bottom:'72px', right:'332px', filter:'drop-shadow(0 0 16px rgba(80,120,255,0.4))'}}>
         <D20Component
           currentValue={rollResult?.total ?? null}
           rollTrigger={d20TriggerKey}
@@ -5374,7 +5374,7 @@ export default function Home() {
             addGameLog({ title: 'd20 gewürfelt', detail: `Ergebnis ${result.total}` });
           }}
         />
-      </div>
+      </div>}
     </div>
   );
 }
